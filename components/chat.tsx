@@ -13,7 +13,7 @@ import type {
 } from "@/types"
 import { getChatLessonDatabase, getInitialStudentProfile } from "@/lib/data-service";
 import { Send, Mic } from "lucide-react"
-
+import { logger } from '@/lib/logger'; // Import the logger
 interface ChatProps {
   onAction: (action: ChatAction) => void;
   simulatedMessage: { text: string; id: number } | null;
@@ -60,7 +60,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
             setLlmContext(prev => ({ ...prev, studentProfile: profile }));
             setChatDb(database);
         } catch (error) {
-            console.error("Error fetching initial chat data:", error);
+            logger.error("Error fetching initial chat data", { ...(error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : { error }), component: 'Chat' });
             setMessages(prev => [...prev, { text: "Error loading chat data.", type: 'ai' }]);
         } finally {
             setIsProcessing(false);
@@ -74,7 +74,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     if (!chatDb) return;
     const lessonData = chatDb[lessonId];
     if (!lessonData) {
-        console.warn(`Lesson data not found in chatDb for ID: ${lessonId}`);
+        logger.warn(`Lesson data not found in chatDb for ID: ${lessonId}`, { component: 'Chat', lessonId });
         return;
     }
     setLlmContext((prev: LlmContext) => {
@@ -94,7 +94,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     const lesson = chatDb[lessonId];
     const quizData = lesson?.quizzes?.find((q: LessonQuiz) => q.id === quizId);
     if (!lesson || !quizData) {
-        console.warn(`Quiz data not found in chatDb for lesson ${lessonId}, quiz ${quizId}`);
+        logger.warn(`Quiz data not found in chatDb for lesson ${lessonId}, quiz ${quizId}`, { component: 'Chat', lessonId, quizId });
         return;
     }
     setLlmContext((prev: LlmContext) => ({
@@ -173,7 +173,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
         const apiResponse: LlmApiResponse = await res.json();
 
         if (!res.ok || apiResponse.error) {
-            console.error(`API Error (${res.status}):`, apiResponse.error || res.statusText);
+            logger.error(`API Error (${res.status})`, { error: apiResponse.error || res.statusText, status: res.status, component: 'Chat' });
             responseText = `Error: ${apiResponse.error || res.statusText || "Unknown API error"}`;
         } else {
             responseText = apiResponse.responseText || "Received empty response from assistant.";
@@ -209,7 +209,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
         }
 
     } catch (error) {
-        console.error("Failed to fetch from chat API:", error);
+        logger.error("Failed to fetch from chat API", { ...(error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : { error }), component: 'Chat' });
         responseText = "Failed to connect to the assistant. Please check your connection and try again.";
     } finally {
         // Remove typing indicator regardless of success/failure
@@ -282,13 +282,13 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
   useEffect(() => {
     // Process simulated messages (e.g., from button clicks like "Next Activity")
     if (simulatedMessage && !isProcessing) {
-        console.log(`Processing simulated user message: "${simulatedMessage.text}"`);
+        logger.info(`Processing simulated user message`, { component: 'Chat', messageText: simulatedMessage.text });
         processSubmission(simulatedMessage.text)
             .then(() => {
                 onSimulatedMessageProcessed(); // Notify parent that processing is done
             })
             .catch((error) => {
-                console.error("Error processing simulated message:", error);
+                logger.error("Error processing simulated message", { ...(error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : { error }), component: 'Chat' });
                 // Add error message to chat?
                 setMessages(prev => [...prev, { text: "Error processing action.", type: 'ai' }]);
                 onSimulatedMessageProcessed(); // Still notify parent on error

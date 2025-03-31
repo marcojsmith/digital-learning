@@ -3,7 +3,7 @@ import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, Gener
 // Removed duplicate import line below
 import type { LlmContext } from '@/types';
 import { SYSTEM_PROMPT_TEXT } from '@/lib/prompts/system-prompt'; // Import the prompt
-
+import { logger } from '@/lib/logger'; // Import the new logger
 // --- System Prompt ---
 // Use the imported prompt constant
 const systemPromptText = SYSTEM_PROMPT_TEXT;
@@ -70,22 +70,42 @@ const safetySettings = [
 
 // --- API Route Handler ---
 export async function POST(request: Request) {
+  // Use general logger here as reqLogger is not yet initialized
   if (!apiKey || !genAI || !model) {
-    console.error("Gemini API key or client not initialized.");
+    logger.error("Gemini API key or client not initialized. Cannot process request.");
     return NextResponse.json({ error: "API not configured correctly." }, { status: 500 });
   }
 
-  let requestBody;
+  // Start request logging
+  const reqLogger = logger.startRequest({ path: request.url, method: request.method });
+
+  let requestBody: any; // Keep 'any' for flexibility or define a strict input type
   try {
-    requestBody = await request.json();
+    // Clone the request to read the body safely
+    const rawBody = await request.text(); // Read as text first for logging
+    reqLogger.logPayload('request', rawBody); // Log raw body (or size in prod)
+    try {
+        requestBody = JSON.parse(rawBody); // Now parse
+    } catch (parseError) {
+        reqLogger.error("Error parsing request body JSON", parseError instanceof Error ? parseError : { error: parseError });
+        reqLogger.endRequest(400, { error: "Invalid JSON format" });
+        return NextResponse.json({ error: "Invalid request body: Malformed JSON." }, { status: 400 });
+    }
   } catch (error) {
-    console.error("Error parsing request body:", error);
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+    reqLogger.error("Error reading request body", error instanceof Error ? error : { error: error });
+    reqLogger.endRequest(500, { error: "Failed to read request body" });
+    return NextResponse.json({ error: "Failed to read request body." }, { status: 500 });
   }
 
   const { currentUserMessage, currentLlmContext, availableLessons, currentLessonData } = requestBody;
 
   if (!currentUserMessage || !currentLlmContext || !availableLessons) {
+    reqLogger.warn("Missing required fields in request body.", {
+        hasCurrentUserMessage: !!currentUserMessage,
+        hasCurrentLlmContext: !!currentLlmContext,
+        hasAvailableLessons: !!availableLessons,
+    });
+    reqLogger.endRequest(400, { error: "Missing required fields" });
     return NextResponse.json({ error: "Missing required fields in request body." }, { status: 400 });
   }
 
@@ -132,36 +152,40 @@ export async function POST(request: Request) {
   ];
 
   try {
-    console.log("Sending request to Gemini with parts:", JSON.stringify(parts, null, 2)); // Log input parts
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts }],
-      generationConfig,
-      safetySettings,
-    });
+    const llmPayload = {
+        contents: [{ role: "user", parts }],
+        generationConfig,
+        safetySettings,
+    };
+    reqLogger.logPayload('llm_request', llmPayload); // Log LLM request payload
 
-    console.log("Received response from Gemini.");
+    const result = await model.generateContent(llmPayload);
+
+    reqLogger.info("Received raw response from Gemini."); // Log confirmation
 
     // --- Response Handling ---
     if (!result.response) {
-        console.error("Gemini response was undefined.");
-        throw new Error("No response received from LLM.");
+        reqLogger.error("Gemini response object was undefined.");
+        throw new Error("No response object received from LLM.");
     }
 
     const candidates = result.response.candidates;
     if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0) {
-        console.error("Invalid response structure from Gemini:", JSON.stringify(result.response, null, 2));
+        reqLogger.error("Invalid response structure from Gemini: Missing candidates or content parts.", { response: result.response });
         // Check for safety feedback
-        if (result.response.promptFeedback?.blockReason) {
-             console.error(`Blocked due to: ${result.response.promptFeedback.blockReason}`);
-             return NextResponse.json({ error: `Content blocked by safety filters: ${result.response.promptFeedback.blockReason}` }, { status: 400 });
+        const blockReason = result.response.promptFeedback?.blockReason;
+        if (blockReason) {
+             reqLogger.warn(`LLM request blocked by safety filter`, { blockReason, safetyRatings: result.response.promptFeedback?.safetyRatings });
+             reqLogger.endRequest(400, { error: "Content blocked by safety filters", blockReason });
+             return NextResponse.json({ error: `Content blocked by safety filters: ${blockReason}` }, { status: 400 });
         }
         throw new Error("Invalid or empty response content from LLM.");
     }
 
     const responseText = candidates[0].content.parts[0].text;
-    console.log("Raw response text received from Gemini:", responseText); // Log raw response text
+    reqLogger.logPayload('llm_response', responseText); // Log raw response text (or size in prod)
     if (!responseText) {
-        console.error("Empty text part in Gemini response:", JSON.stringify(candidates[0].content.parts, null, 2));
+        reqLogger.error("Empty text part in Gemini response.", { parts: candidates[0].content.parts });
         throw new Error("Empty response text from LLM.");
     }
 
@@ -174,49 +198,57 @@ export async function POST(request: Request) {
         const jsonToParse = match ? match[1].trim() : responseText.trim(); // Use extracted or trimmed raw text
 
         if (!jsonToParse) {
-             console.error("Extracted JSON string is empty.");
+             reqLogger.error("Extracted JSON string is empty after regex/trim.", { rawResponse: responseText });
              throw new Error("Empty JSON content from LLM response.");
         }
 
         parsedResponse = JSON.parse(jsonToParse);
-        console.log("Successfully parsed Gemini JSON response.");
-
+        reqLogger.info("Successfully parsed Gemini JSON response.");
+        // Extract token usage if available
+        const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
+        reqLogger.logLlmResult(parsedResponse, tokenUsage); // Log parsed result, timing, and token usage
         // --- Start Payload Validation Logic ---
         const requiredPayloadActions = ['showLessonOverview', 'showQuiz', 'completeLesson'];
         const action = parsedResponse.action; // Assuming parsedResponse holds the parsed JSON
 
         if (action && requiredPayloadActions.includes(action.type)) {
           if (!action.payload) {
-            console.error(`Validation Error: Action '${action.type}' requires a payload, but it was missing.`);
+            reqLogger.error(`Validation Error: Action '${action.type}' requires a payload, but it was missing.`, { action });
             throw new Error(`LLM response action '${action.type}' missing required payload.`);
           }
 
           if ((action.type === 'showLessonOverview' || action.type === 'completeLesson') && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string')) {
-             console.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId'. Payload:`, action.payload);
+             reqLogger.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId'.`, { payload: action.payload });
              throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId'.`);
           }
 
           if (action.type === 'showQuiz' && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string' || !action.payload.quizId || typeof action.payload.quizId !== 'string')) {
-             console.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId' or 'quizId'. Payload:`, action.payload);
+             reqLogger.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId' or 'quizId'.`, { payload: action.payload });
              throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId' or 'quizId'.`);
           }
-          console.log(`Validation Passed for action type: ${action.type}`);
+          reqLogger.debug(`Payload validation passed for action type: ${action.type}`);
         }
         // --- End Payload Validation Logic ---
 
     } catch (parseError) {
-        console.error("Error parsing Gemini JSON response:", parseError);
-        console.error("Raw response text received from Gemini:", responseText); // Log raw text for debugging
+        reqLogger.error("Error parsing Gemini JSON response", parseError instanceof Error ? parseError : { error: parseError });
+        reqLogger.error("Raw response text that failed parsing:", { rawResponse: responseText }); // Log raw text for debugging
         // Return a specific error response to the client
+        reqLogger.endRequest(500, { error: "Failed to parse LLM response" });
         return NextResponse.json({ error: "Failed to parse LLM response as JSON." }, { status: 500 });
     }
 
     // Return the parsed JSON object
+    reqLogger.endRequest(200, { actionType: parsedResponse.action?.type });
     return NextResponse.json(parsedResponse);
 
   } catch (error) {
-    console.error("Error calling Gemini API:", error);
+    reqLogger.error("Unhandled error in chat API handler", error instanceof Error ? error : { error: error });
     const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    // Ensure request ends even on unhandled errors
+    if (!reqLogger.hasEnded()) { // Use the getter method
+        reqLogger.endRequest(500, { error: errorMessage });
+    }
     return NextResponse.json({ error: `LLM API call failed: ${errorMessage}` }, { status: 500 });
   }
 }
