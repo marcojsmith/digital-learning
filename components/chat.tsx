@@ -16,12 +16,21 @@ import { Send, Mic } from "lucide-react"
 
 interface ChatProps {
   onAction: (action: ChatAction) => void;
-  // New props for simulating messages
   simulatedMessage: { text: string; id: number } | null;
   onSimulatedMessageProcessed: () => void;
 }
 
-export default function Chat({ onAction, simulatedMessage, onSimulatedMessageProcessed }: ChatProps) { // Added new props
+// Define a type for the expected API response structure
+interface LlmApiResponse {
+    responseText: string;
+    action?: ChatAction | null;
+    contextUpdates?: Partial<LlmContext> | null; // Use Partial for flexibility
+    flagsPreviousMessageAsInappropriate?: boolean | null;
+    error?: string; // Include potential error field
+}
+
+
+export default function Chat({ onAction, simulatedMessage, onSimulatedMessageProcessed }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { text: "Hello! I'm your math tutor. I can help you learn about numbers, operations, and more. What would you like to learn today?", type: "ai" },
   ])
@@ -33,13 +42,16 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
   const [llmContext, setLlmContext] = useState<LlmContext>({
     studentProfile: null,
     currentLesson: null, currentQuiz: null, progressHistory: [], recentInteractions: [],
-    conceptsIntroduced: new Set(), conceptsMastered: new Set(), conceptsStruggling: new Set(),
+    // Use Sets for efficient lookups, convert to array for API
+    conceptsIntroduced: new Set<string>(),
+    conceptsMastered: new Set<string>(),
+    conceptsStruggling: new Set<string>(),
   });
 
   // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
-        setIsProcessing(true); // Indicate loading
+        setIsProcessing(true);
         try {
             const [profile, database] = await Promise.all([
                 getInitialStudentProfile(),
@@ -51,7 +63,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
             console.error("Error fetching initial chat data:", error);
             setMessages(prev => [...prev, { text: "Error loading chat data.", type: 'ai' }]);
         } finally {
-            setIsProcessing(false); // Finish loading
+            setIsProcessing(false);
         }
     };
     fetchData();
@@ -71,7 +83,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
         return {
             ...prev,
             currentLesson: { id: lessonId, data: lessonData, startTime: new Date(), progressPercentage: 0 },
-            currentQuiz: null,
+            currentQuiz: null, // Reset quiz when lesson changes
             conceptsIntroduced: newIntroduced
         };
     });
@@ -87,6 +99,8 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     }
     setLlmContext((prev: LlmContext) => ({
         ...prev,
+        // Ensure currentLesson is set if navigating directly to a quiz (might need adjustment)
+        currentLesson: prev.currentLesson?.id === lessonId ? prev.currentLesson : { id: lessonId, data: lesson, startTime: new Date(), progressPercentage: 0 },
         currentQuiz: { id: quizId, data: quizData, startTime: new Date(), attempts: 0, answers: {}, correctCount: 0 }
     }));
   }, [chatDb]);
@@ -101,7 +115,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
   }
 
   // ========================================================================
-  // Core Message Processing Logic (Extracted)
+  // Core Message Processing Logic - Calls API Route
   // ========================================================================
   const processSubmission = useCallback(async (messageText: string) => {
     if (!messageText || isProcessing || !chatDb) return;
@@ -113,147 +127,101 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     const typingMessage: ChatMessage = { text: "Assistant is typing...", type: "typing" };
     setMessages((prev) => [...prev, typingMessage]);
 
-    // Simulate processing delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
-    setMessages((prev) => prev.filter((msg) => msg.type !== "typing"));
-
-    let responseText: string = "Sorry, I didn't understand that. Can you rephrase?";
+    // --- Define variables for API results ---
+    let responseText: string = "Sorry, something went wrong. Please try again."; // Default error message
     let action: ChatAction | null = null;
-    let simulateInappropriateFlag = false; // Simulate the flag from AI
-    const lowerMsg = messageText.toLowerCase();
+    let contextUpdates: Partial<LlmContext> | null = null;
+    let flagsPreviousMessageAsInappropriate: boolean | null = null;
 
-    const currentLessonState = llmContext.currentLesson;
-    const currentQuizState = llmContext.currentQuiz;
-    const currentLessonData = currentLessonState?.data;
+    // --- Call the API Route ---
+    try {
+        // Prepare availableLessons from chatDb
+        const availableLessons = chatDb ? Object.entries(chatDb).reduce((acc, [id, lesson]) => {
+            acc[id] = lesson.title;
+            return acc;
+        }, {} as Record<string, string>) : {};
 
-    // --- Dynamic Simulation Logic ---
-    // Add a test case for the inappropriate flag
-    if (lowerMsg.includes('inappropriate_test')) {
-        responseText = "I've detected that your previous message might be inappropriate. Please be respectful.";
-        simulateInappropriateFlag = true; // Trigger the flag for testing
-    }
-    else if (lowerMsg.includes('help')) {
-        responseText = "I can help you learn! Try commands like 'start lesson', 'show first quiz', 'next activity', 'previous activity', 'next lesson', 'previous lesson', or 'back to overview'.";
-    } else if (lowerMsg.includes('hello') || lowerMsg.includes('hi')) {
-        responseText = "Hello there! Ready to learn? Ask me anything about the lessons or say 'start lesson'.";
-    }
-    // Lesson Start/Navigation
-    else if (lowerMsg.includes('start') || lowerMsg.includes('begin') || lowerMsg.includes('learn')) {
-        const firstLessonId = Object.keys(chatDb)[0] || "lesson1";
-        const targetLesson = chatDb[firstLessonId];
-        if (targetLesson) {
-            responseText = `Great! Let's start with '${targetLesson.title}'. I'll display the lesson overview.`;
-            action = { type: "showLessonOverview", payload: { lessonId: firstLessonId } };
-            setCurrentLesson(firstLessonId);
+        // Get currentLessonData if a lesson is active
+        const currentLessonData = llmContext.currentLesson?.id ? chatDb?.[llmContext.currentLesson.id] : null;
+
+        // Prepare serializable context for the API
+        const serializableLlmContext = {
+            studentProfile: llmContext.studentProfile,
+            currentLesson: llmContext.currentLesson ? { id: llmContext.currentLesson.id } : null,
+            currentQuiz: llmContext.currentQuiz ? { id: llmContext.currentQuiz.id } : null,
+            conceptsIntroduced: Array.from(llmContext.conceptsIntroduced),
+            conceptsMastered: Array.from(llmContext.conceptsMastered),
+            conceptsStruggling: Array.from(llmContext.conceptsStruggling),
+            progressHistory: llmContext.progressHistory, // Assuming these are serializable
+            recentInteractions: llmContext.recentInteractions, // Assuming these are serializable
+        };
+
+
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                currentUserMessage: messageText,
+                currentLlmContext: serializableLlmContext,
+                availableLessons: availableLessons,
+                currentLessonData: currentLessonData // Send full data if available
+            }),
+        });
+
+        const apiResponse: LlmApiResponse = await res.json();
+
+        if (!res.ok || apiResponse.error) {
+            console.error(`API Error (${res.status}):`, apiResponse.error || res.statusText);
+            responseText = `Error: ${apiResponse.error || res.statusText || "Unknown API error"}`;
         } else {
-            responseText = "Sorry, I couldn't find the first lesson data.";
-        }
-    } else if (lowerMsg.includes('next lesson')) {
-        if (currentLessonData?.nextLesson && chatDb[currentLessonData.nextLesson]) {
-            const nextLessonId = currentLessonData.nextLesson;
-            const nextLessonTitle = chatDb[nextLessonId]?.title || 'the next lesson';
-            responseText = `Okay, moving to the next lesson: '${nextLessonTitle}'.`;
-            action = { type: "showLessonOverview", payload: { lessonId: nextLessonId } };
-            setCurrentLesson(nextLessonId);
-        } else if (currentLessonState) {
-            responseText = "You've reached the end of the available lessons!";
-        } else {
-            responseText = "You need to start a lesson first before moving to the next one.";
-        }
-    } else if (lowerMsg.includes('previous lesson')) {
-        if (currentLessonData?.prevLesson && chatDb[currentLessonData.prevLesson]) {
-            const prevLessonId = currentLessonData.prevLesson;
-            const prevLessonTitle = chatDb[prevLessonId]?.title || 'the previous lesson';
-            responseText = `Okay, going back to the previous lesson: '${prevLessonTitle}'.`;
-            action = { type: "showLessonOverview", payload: { lessonId: prevLessonId } };
-            setCurrentLesson(prevLessonId);
-        } else if (currentLessonState) {
-            responseText = "You are already on the first lesson.";
-        } else {
-            responseText = "You need to start a lesson first before going to the previous one.";
-        }
-    }
-    // Quiz Navigation/Interaction (Requires a lesson to be active)
-    else if (currentLessonState) {
-        const lessonId = currentLessonState.id;
-        const quizzes = currentLessonData?.quizzes || [];
-        const currentQuizId = currentQuizState?.id;
+            responseText = apiResponse.responseText || "Received empty response from assistant.";
+            action = apiResponse.action || null;
+            contextUpdates = apiResponse.contextUpdates || null;
+            flagsPreviousMessageAsInappropriate = apiResponse.flagsPreviousMessageAsInappropriate || null;
 
-        if (lowerMsg.includes('first quiz') || lowerMsg.includes('start quiz')) {
-            if (quizzes.length > 0) {
-                const firstQuizId = quizzes[0].id;
-                responseText = `Okay, here's the first activity for this lesson: ${quizzes[0].title}`;
-                action = { type: "showQuiz", payload: { lessonId, quizId: firstQuizId } };
-                setCurrentQuiz(lessonId, firstQuizId);
-            } else {
-                responseText = "This lesson doesn't seem to have any quizzes.";
-            }
-        } else if (lowerMsg.includes('next activity') || lowerMsg.includes('next quiz')) { // Handle "next activity" from button
-            if (!currentQuizId) { // If no quiz active, treat as "first quiz"
-                 if (quizzes.length > 0) {
-                    const firstQuizId = quizzes[0].id;
-                    responseText = `Okay, starting with the first activity: ${quizzes[0].title}`;
-                    action = { type: "showQuiz", payload: { lessonId, quizId: firstQuizId } };
-                    setCurrentQuiz(lessonId, firstQuizId);
-                } else {
-                    responseText = "This lesson doesn't seem to have any quizzes to start.";
+            // --- Update LLM Context based on API response ---
+            setLlmContext(prev => {
+                if (!contextUpdates) {
+                    return prev; // No updates from API
                 }
-            } else if (quizzes.length > 0) { // If quiz active, find next
-                const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
-                if (currentQuizIndex < quizzes.length - 1) {
-                    const nextQuiz = quizzes[currentQuizIndex + 1];
-                    responseText = `Okay, moving to the next activity: ${nextQuiz.title}`;
-                    action = { type: "showQuiz", payload: { lessonId, quizId: nextQuiz.id } };
-                    setCurrentQuiz(lessonId, nextQuiz.id);
-                } else {
-                    responseText = `You've finished the last activity for this lesson! Try 'next lesson'${currentLessonData?.nextLesson ? '' : ' (though there might not be one)'} or 'complete lesson'.`;
+                const newContext = { ...prev };
+                // Update concepts (handle potential array format from API)
+                if (contextUpdates.conceptsMastered && Array.isArray(contextUpdates.conceptsMastered)) {
+                    const updatedMastered = new Set(prev.conceptsMastered);
+                    contextUpdates.conceptsMastered.forEach(concept => updatedMastered.add(concept));
+                    newContext.conceptsMastered = updatedMastered;
                 }
-            } else {
-                 responseText = "There are no quizzes in this lesson.";
-            }
-        } else if (lowerMsg.includes('previous activity') || lowerMsg.includes('previous quiz')) { // Handle "previous activity"
-            if (!currentQuizId) {
-                responseText = "You need to be doing an activity to go back. Try 'show first quiz'.";
-            } else if (quizzes.length > 0) {
-                const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
-                if (currentQuizIndex > 0) {
-                    const prevQuiz = quizzes[currentQuizIndex - 1];
-                    responseText = `Okay, going back to the previous activity: ${prevQuiz.title}`;
-                    action = { type: "showQuiz", payload: { lessonId, quizId: prevQuiz.id } };
-                    setCurrentQuiz(lessonId, prevQuiz.id);
-                } else {
-                    // If on the first quiz, go back to overview
-                    responseText = "You are on the first activity. Going back to the lesson overview.";
-                    action = { type: "showLessonOverview", payload: { lessonId } };
-                    setLlmContext((prev: LlmContext) => ({ ...prev, currentQuiz: null }));
+                 if (contextUpdates.conceptsStruggling && Array.isArray(contextUpdates.conceptsStruggling)) {
+                    const updatedStruggling = new Set(prev.conceptsStruggling);
+                    contextUpdates.conceptsStruggling.forEach(concept => updatedStruggling.add(concept));
+                    newContext.conceptsStruggling = updatedStruggling;
                 }
-            } else {
-                 responseText = "There are no quizzes to go back to in this lesson.";
-            }
-        } else if (lowerMsg.includes('return to lesson overview') || lowerMsg.includes('back to overview')) {
-            responseText = `Returning to the overview for lesson: ${currentLessonData?.title}.`;
-            action = { type: "showLessonOverview", payload: { lessonId } };
-            setLlmContext((prev: LlmContext) => ({ ...prev, currentQuiz: null }));
-        } else if (lowerMsg.includes('complete lesson')) {
-            responseText = `Great job completing the lesson: ${currentLessonData?.title}! What would you like to do next? Try 'next lesson'.`;
-            action = { type: "completeLesson", payload: { lessonId } };
-            setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
+                 if (contextUpdates.conceptsIntroduced && Array.isArray(contextUpdates.conceptsIntroduced)) {
+                    const updatedIntroduced = new Set(prev.conceptsIntroduced);
+                    contextUpdates.conceptsIntroduced.forEach(concept => updatedIntroduced.add(concept));
+                    newContext.conceptsIntroduced = updatedIntroduced;
+                }
+                // Add more context update logic here if needed (e.g., studentProfile)
+                return newContext;
+            });
         }
-        else {
-             responseText = `I can help with '${currentLessonData?.title}'. You can ask for the 'first quiz', 'next activity', 'previous activity', 'next lesson', 'previous lesson', or 'back to overview'.`;
-        }
-    }
-    // Fallback if no lesson is active and command isn't general
-    else {
-        responseText = "Please start a lesson first. Try saying 'start lesson'.";
-    }
-    // --- End Simulation Logic ---
 
-    // Process the simulated inappropriate flag *before* adding the AI message
-    if (simulateInappropriateFlag) {
+    } catch (error) {
+        console.error("Failed to fetch from chat API:", error);
+        responseText = "Failed to connect to the assistant. Please check your connection and try again.";
+    } finally {
+        // Remove typing indicator regardless of success/failure
+        setMessages((prev) => prev.filter((msg) => msg.type !== "typing"));
+    }
+    // --- End API Call Logic ---
+
+    // --- Process API Results (Runs *after* finally) ---
+
+    // Handle inappropriate flag
+     if (flagsPreviousMessageAsInappropriate) {
         setMessages(prevMessages => {
-            // Find the index of the last user message
             let lastUserMessageIndex = -1;
             for (let i = prevMessages.length - 1; i >= 0; i--) {
                 if (prevMessages[i].type === 'user') {
@@ -261,30 +229,40 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                     break;
                 }
             }
-
             if (lastUserMessageIndex !== -1) {
-                // Create a new array with the updated message
-                return prevMessages.map((msg, index) => {
-                    if (index === lastUserMessageIndex) {
-                        return { ...msg, isInappropriate: true }; // Set the flag
-                    }
-                    return msg;
-                });
+                return prevMessages.map((msg, index) =>
+                    index === lastUserMessageIndex ? { ...msg, isInappropriate: true } : msg
+                );
             }
-            return prevMessages; // Return previous state if no user message found (shouldn't happen here)
+            return prevMessages;
         });
     }
 
+    // Add AI response message
     const aiMessage: ChatMessage = { text: responseText, type: "ai" };
-    setMessages((prev) => [...prev, aiMessage]); // Add the AI response *after* potentially updating the user message
+    setMessages((prev) => [...prev, aiMessage]);
 
+     // Handle actions that modify local context *after* API call & context updates
+     // These ensure the local state matches the intended state after an action
+     if (action?.type === 'showLessonOverview' && action.payload?.lessonId) {
+         setCurrentLesson(action.payload.lessonId);
+     } else if (action?.type === 'showQuiz' && action.payload?.lessonId && action.payload?.quizId) {
+         setCurrentQuiz(action.payload.lessonId, action.payload.quizId);
+     } else if (action?.type === 'completeLesson') {
+         // Clear lesson/quiz locally after completion action is confirmed by API
+         setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
+     }
+
+    // Trigger external action handler if needed (e.g., for UI changes in parent)
     if (action) {
-      onAction(action);
+      onAction(action); // Call the prop function passed from the parent
     }
 
+    // Always set processing to false at the very end
     setIsProcessing(false);
+    // --- End Processing API Results ---
 
-  }, [isProcessing, chatDb, llmContext, onAction, setCurrentLesson, setCurrentQuiz]); // Added dependencies
+  }, [isProcessing, chatDb, llmContext, onAction, setCurrentLesson, setCurrentQuiz]); // Dependencies for useCallback
 
   // ========================================================================
   // Handle Actual User Input Submission
@@ -293,29 +271,32 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     e.preventDefault();
     const messageText = inputValue.trim();
     if (messageText) {
-        processSubmission(messageText); // Call the extracted logic
+        processSubmission(messageText); // Call the core logic
         setInputValue(""); // Clear input after submission attempt
     }
   };
 
   // ========================================================================
-  // Handle Simulated Message Submission from UI Actions
+  // Handle Simulated Message Submission from UI Actions (e.g., button clicks)
   // ========================================================================
   useEffect(() => {
-    if (simulatedMessage && !isProcessing) { // Only process if not already processing
-        console.log(`Simulating user message: "${simulatedMessage.text}"`);
+    // Process simulated messages (e.g., from button clicks like "Next Activity")
+    if (simulatedMessage && !isProcessing) {
+        console.log(`Processing simulated user message: "${simulatedMessage.text}"`);
         processSubmission(simulatedMessage.text)
             .then(() => {
                 onSimulatedMessageProcessed(); // Notify parent that processing is done
             })
             .catch((error) => {
                 console.error("Error processing simulated message:", error);
+                // Add error message to chat?
+                setMessages(prev => [...prev, { text: "Error processing action.", type: 'ai' }]);
                 onSimulatedMessageProcessed(); // Still notify parent on error
             });
     }
   }, [simulatedMessage, isProcessing, processSubmission, onSimulatedMessageProcessed]); // Added dependencies
 
-  // --- JSX Structure (remains the same) ---
+  // --- JSX Structure (remains largely the same) ---
   return (
     <div className="flex flex-col h-full border-l bg-white">
         {!chatDb && (
@@ -328,14 +309,14 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                 <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-2 bg-light-gray">
                 {messages.map((message, index) => (
                     <div
-                    key={`${message.type}-${index}`} // Use a more robust key
+                    key={`${message.type}-${index}-${message.text.slice(0, 10)}`} // Slightly more robust key
                     className={`p-3 rounded-2xl max-w-[85%] shadow-sm ${
                         message.type === "user"
                         ? "bg-user-msg text-[#0c5460] self-end rounded-br-sm"
                         : message.type === "typing"
                             ? "bg-transparent text-gray-500 italic self-start border-none shadow-none"
                             : "bg-ai-msg text-dark-gray self-start rounded-bl-sm border border-medium-gray"
-                    } ${/* Conditionally add red border */ message.type === 'user' && message.isInappropriate ? 'border border-red-500' : ''}`}
+                    } ${message.type === 'user' && message.isInappropriate ? 'border-2 border-red-500' : ''}`} // Enhanced border
                     >
                     {message.type === 'typing' ? (
                         <div className="flex space-x-1">
@@ -362,15 +343,16 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                 />
                 <button
                     type="submit"
-                    disabled={isProcessing || !chatDb}
-                    className="w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors disabled:bg-gray-400"
+                    disabled={isProcessing || !chatDb || !inputValue.trim()} // Disable if input is empty
+                    className="w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                     <Send size={16} />
                 </button>
                 <button
                     type="button"
-                    disabled={isProcessing || !chatDb}
+                    disabled={isProcessing || !chatDb} // Keep Mic enabled even if input empty for potential future use
                     className="w-9 h-9 bg-primary text-white rounded-full flex items-center justify-center hover:bg-primary-dark transition-colors disabled:bg-gray-400"
+                    title="Voice input (not implemented)" // Add title for clarity
                 >
                     <Mic size={16} />
                 </button>

@@ -86,13 +86,17 @@ export default function Home() {
     console.log("Chat Action Received in page.tsx:", action);
     switch (action.type) {
         case "showLessonOverview":
-            if (action.payload.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
+            // Add check for payload existence
+            if (action.payload?.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
                 setCurrentLessonId(action.payload.lessonId);
                 setCurrentQuizIdToShow(null);
+            } else {
+                 console.warn("showLessonOverview action received without valid payload.lessonId");
             }
             break;
         case "showQuiz":
-            if (action.payload.lessonId && action.payload.quizId) {
+            // Add check for payload and nested properties
+            if (action.payload?.lessonId && action.payload?.quizId) {
                 const targetLesson = lessonsData.find(l => l.id === action.payload.lessonId);
                 if (targetLesson && targetLesson.quizzes.some(q => q.id === action.payload.quizId)) {
                     if (currentLessonId !== action.payload.lessonId) {
@@ -102,19 +106,27 @@ export default function Home() {
                 } else {
                     console.warn(`Attempted to show non-existent quiz: ${action.payload.lessonId}/${action.payload.quizId}`);
                 }
+            } else {
+                 console.warn("showQuiz action received without valid payload.lessonId or payload.quizId");
             }
             break;
         case "completeLesson":
-             if (action.payload.lessonId) {
+             // Add check for payload existence
+             if (action.payload?.lessonId) {
                 handleLessonComplete(action.payload.lessonId);
+             } else {
+                  console.warn("completeLesson action received without valid payload.lessonId");
              }
             break;
         case "returnToLessonOverview":
-            if (action.payload.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
+            // Add check for payload existence
+            if (action.payload?.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
                  if (currentLessonId !== action.payload.lessonId) {
                     setCurrentLessonId(action.payload.lessonId);
                  }
                  setCurrentQuizIdToShow(null);
+            } else {
+                 console.warn("returnToLessonOverview action received without valid payload.lessonId");
             }
             break;
         default:

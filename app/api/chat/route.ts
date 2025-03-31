@@ -1,67 +1,95 @@
-const {
-  GoogleGenerativeAI,
-  HarmCategory,
-  HarmBlockThreshold,
-} = require("@google/generative-ai");
-const fs = require("node:fs");
-const mime = require("mime-types");
+import { NextResponse } from 'next/server';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig } from "@google/generative-ai";
+// Removed duplicate import line below
+import type { LlmContext } from '@/types';
+import { SYSTEM_PROMPT_TEXT } from '@/lib/prompts/system-prompt'; // Import the prompt
 
+// --- System Prompt ---
+// Use the imported prompt constant
+const systemPromptText = SYSTEM_PROMPT_TEXT;
+
+// --- Gemini Configuration ---
 const apiKey = process.env.GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.0-flash-lite",
+const model = genAI?.getGenerativeModel({
+  model: "gemini-2.0-flash", // Use a model supporting JSON mode
 });
 
-const generationConfig = {
-  temperature: 1,
+const generationConfig: GenerationConfig = { // Explicitly type the config
+  temperature: 0.1, // Adjust for creativity vs consistency
   topP: 0.95,
   topK: 40,
-  maxOutputTokens: 8192,
-  responseModalities: [
-  ],
+  maxOutputTokens: 1000, // Reduced token limit as requested
   responseMimeType: "application/json",
-  responseSchema: {
-    type: "object",
+  responseSchema: { // Use SchemaType enum values
+    type: SchemaType.OBJECT, // Corrected: Use enum for top-level type
     properties: {
-      responseText: {
-        type: "string"
-      },
+      responseText: { type: SchemaType.STRING, nullable: true }, // Allow null
       action: {
-        type: "object",
+        type: SchemaType.OBJECT,
         properties: {
-          type: {
-            type: "string"
-          },
-          payload: {
-            type: "object",
+          type: { type: SchemaType.STRING },
+          payload: { // Define expected optional payload properties
+            type: SchemaType.OBJECT,
             properties: {
-              lessonId: {
-                type: "string"
-              },
-              quizId: {
-                type: "string"
-              }
-            }
+              lessonId: { type: SchemaType.STRING, nullable: true },
+              quizId: { type: SchemaType.STRING, nullable: true }
+            },
+            // Note: 'required' field is omitted here, making properties optional by default
           }
+        },
+        nullable: true // Allow action to be null
+      },
+      reasoning: { type: SchemaType.STRING, nullable: true },
+      contextUpdates: {
+        type: SchemaType.OBJECT,
+        nullable: true,
+        properties: { // Define expected optional context update properties
+            conceptsMastered: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
+            conceptsStruggling: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
+            conceptsIntroduced: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
+            // Add other potential context fields here if needed
         }
       },
-      reasoning: {
-        type: "string"
-      },
-      flagsPreviousMessageAsInappropriate: {
-        type: "boolean"
-      }
+      flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN, nullable: true }
     },
-    required: [
-      "responseText"
-    ]
+    required: ["responseText", "action", "reasoning", "contextUpdates", "flagsPreviousMessageAsInappropriate"] // All fields required
   },
 };
 
-async function run() {
+// Safety settings (adjust as needed)
+const safetySettings = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE },
+];
+
+// --- API Route Handler ---
+export async function POST(request: Request) {
+  if (!apiKey || !genAI || !model) {
+    console.error("Gemini API key or client not initialized.");
+    return NextResponse.json({ error: "API not configured correctly." }, { status: 500 });
+  }
+
+  let requestBody;
+  try {
+    requestBody = await request.json();
+  } catch (error) {
+    console.error("Error parsing request body:", error);
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const { currentUserMessage, currentLlmContext, availableLessons, currentLessonData } = requestBody;
+
+  if (!currentUserMessage || !currentLlmContext || !availableLessons) {
+    return NextResponse.json({ error: "Missing required fields in request body." }, { status: 400 });
+  }
+
+  // Construct the input for the model
   const parts = [
-    {text: "# System PromptYou are Roo, a friendly and helpful AI Math Tutor. Your primary role is to guide users through interactive math lessons and activities based on the provided curriculum. You communicate exclusively by generating structured JSON output. **Strict adherence to the output format is mandatory.****Input Context:**You will receive the following information in each request:1.  `currentUserMessage`: The latest message text from the user (string).2.  `currentLlmContext`: A JSON object representing the user's current learning state (see structure below).3.  `availableLessons`: A JSON object mapping lesson IDs to their titles (e.g., `{\"lesson1\": \"Introduction\", \"lesson2\": \"Addition\"}`). Assume the lesson IDs are ordered logically.4.  `currentLessonData` (if applicable): The full data object for the `currentLlmContext.currentLesson.id`, including its `quizzes` array.**`LlmContext` Structure (Input):**```json{  \"studentProfile\": { },  \"currentLesson\": { \"id\": \"string\" },  \"currentQuiz\": { \"id\": \"string\" },  \"conceptsIntroduced\": [ \"string\" ],  \"conceptsMastered\": [ \"string\" ],  \"conceptsStruggling\": [ \"string\" ]}```**Required Output Format:**Your response MUST be a single, valid JSON object conforming to the `LlmResponse` structure below. Do not include any text outside of this JSON object.```json{  \"responseText\": \"string\",  \"action\": {    \"type\": \"string\",    \"payload\": {    }  } | null,  \"reasoning\": \"string\",  \"contextUpdates\": {  } | null,  \"flagsPreviousMessageAsInappropriate\": boolean | null // Optional: Indicates if the *previous* user message was flagged}```**Action Types & Payload Requirements (MANDATORY):***   **`showLessonOverview`**: Displays a lesson overview.    *   **Requires `payload`: `{ \"lessonId\": \"string\" }`. The `payload` object containing `lessonId` MUST be present.***   **`showQuiz`**: Displays a specific quiz/activity.    *   **Requires `payload`: `{ \"lessonId\": \"string\", \"quizId\": \"string\" }`. The `payload` object containing `lessonId` and `quizId` MUST be present.***   **`completeLesson`**: Marks a lesson as finished.    *   **Requires `payload`: `{ \"lessonId\": \"string\" }`. The `payload` object containing `lessonId` MUST be present.***   **`generalResponse`**: For conversational responses without UI changes.    *   `payload` is **NOT required**. The `action` field itself should be omitted.*   **`requestClarification`**: If the user's intent is unclear.    *   `payload` is **NOT required**. The `action` field itself should be omitted unless you specifically want to track clarification requests with `{\"type\": \"requestClarification\"}` (in which case payload is still omitted).**Examples of Correct and Incorrect Outputs:****Scenario: User wants to start the FIRST lesson (e.g., \"start lesson\")***   **Input Context:** `currentLlmContext.currentLesson` is `null`, `availableLessons` contains `\"lesson1\": \"Intro\"`.*   **CORRECT Output:**    ```json    {      \"responseText\": \"Great! Let's begin with lesson 'Intro'. I'll bring up the overview.\",      \"action\": {        \"type\": \"showLessonOverview\",        \"payload\": { \"lessonId\": \"lesson1\" }      }    }    ```    *(Note: `reasoning` and `contextUpdates` are omitted as they are null/not applicable)**   **INCORRECT Output (Missing Payload):**    ```json    {      \"responseText\": \"Great! Let's begin with lesson 'Intro'. I'll bring up the overview.\",      \"action\": {        \"type\": \"showLessonOverview\"      }    }    ```    *(Reason Incorrect: The `payload` object with `lessonId` is missing, which is mandatory for `showLessonOverview`)**   **INCORRECT Output (Payload Missing lessonId):**    ```json    {      \"responseText\": \"Great! Let's begin with lesson 'Intro'. I'll bring up the overview.\",      \"action\": {        \"type\": \"showLessonOverview\",        \"payload\": { }      }    }    ```    *(Reason Incorrect: The `payload` object is present, but the required `lessonId` field is missing inside it)***Scenario: User wants to see the FIRST quiz of the CURRENT lesson (e.g., \"show quiz\")***   **Input Context:** `currentLlmContext.currentLesson.id` is `\"lesson1\"`, `currentLessonData.quizzes` starts with `{ \"id\": \"quizA\", \"title\": \"Activity A\" }`.*   **CORRECT Output:**    ```json    {      \"responseText\": \"Okay, here's the first activity for this lesson: 'Activity A'.\",      \"action\": {        \"type\": \"showQuiz\",        \"payload\": {          \"lessonId\": \"lesson1\",          \"quizId\": \"quizA\"        }      }    }    ```    *(Note: `reasoning` and `contextUpdates` are omitted)**   **INCORRECT Output (Missing Payload):**    ```json    {      \"responseText\": \"Okay, here's the first activity for this lesson: 'Activity A'.\",      \"action\": {        \"type\": \"showQuiz\"      }    }    ```    *(Reason Incorrect: The `payload` object with `lessonId` and `quizId` is missing, which is mandatory for `showQuiz`)**   **INCORRECT Output (Payload Missing quizId):**    ```json    {      \"responseText\": \"Okay, here's the first activity for this lesson: 'Activity A'.\",      \"action\": {        \"type\": \"showQuiz\",        \"payload\": { \"lessonId\": \"lesson1\" }      }    }    ```    *(Reason Incorrect: The `payload` object is missing the required `quizId` field)***Scenario: User asks a general question (e.g., \"hello\")***   **CORRECT Output:**    ```json    {      \"responseText\": \"Hello there! Ready to learn?\"    }    ```    *(Note: `action`, `reasoning`, and `contextUpdates` are correctly omitted as they are null/not applicable)***Your Task:** Always analyze the user's message and the current context. Generate the appropriate `responseText` and `action`. **If the action type requires a payload (showLessonOverview, showQuiz, completeLesson), you MUST include the `action` field AND the nested `payload` object with ALL its required fields.** For other cases, omit optional fields (`action`, `reasoning`, `contextUpdates`) if they are null or not applicable. Ensure your entire output is valid JSON."},
+    { text: systemPromptText }, // Use the constant here      
     {text: "input: {\n\"currentUserMessage\": \"Let's begin\",\n\"currentLlmContext\": {\n\"studentProfile\": {\n\"name\": \"Alex\",\n\"grade\": 5,\n\"age\": 10,\n\"learningStyle\": \"Visual\",\n\"challenges\": []\n},\n\"currentLesson\": null,\n\"currentQuiz\": null,\n\"progressHistory\": [],\n\"recentInteractions\": [],\n\"conceptsIntroduced\": [],\n\"conceptsMastered\": [],\n\"conceptsStruggling\": []\n},\n\"availableLessons\": {\n\"lesson1\": \"Introduction to Numbers\",\n\"lesson2\": \"Basic Addition\",\n\"lesson3\": \"Counting Objects\"\n},\n\"currentLessonData\": null\n}"},
     {text: "output: {\n  \"responseText\": \"Great! Let's start with 'Introduction to Numbers'.\",\n  \"action\": {\n    \"type\": \"showLessonOverview\",\n    \"payload\": {\n      \"lessonId\": \"lesson1\"\n    }\n  },\n  \"reasoning\": \"User wants to start, no active lesson. Initiating first lesson overview.\",\n  \"contextUpdates\": null\n}"},
     {text: "input: {\"currentUserMessage\": \"Okay, show me the first activity\",  \"currentLlmContext\": {    \"studentProfile\": {      \"name\": \"Alex\",      \"grade\": 5,      \"age\": 10,      \"learningStyle\": \"Visual\",      \"challenges\": []    },    \"currentLesson\": {      \"id\": \"lesson1\",      \"data\": {        \"id\": \"lesson1\",        \"title\": \"Introduction to Numbers\",        \"description\": \"An introduction to basic numbers.\",        \"concepts\": [\"counting\", \"number_identity\"],        \"subject\": \"Math\",        \"progress\": \"in-progress\",        \"quizzes\": [          { \"id\": \"quizA\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [] }        ],        \"nextLesson\": \"lesson2\",        \"prevLesson\": null      },      \"startTime\": \"2025-03-31T08:05:00.000Z\",      \"progressPercentage\": 0    },    \"currentQuiz\": null,    \"progressHistory\": [],    \"recentInteractions\": [      { \"user\": \"Let's begin\" },      { \"ai_response\": { } }    ],    \"conceptsIntroduced\": [\"counting\", \"number_identity\"],    \"conceptsMastered\": [],    \"conceptsStruggling\": []  },  \"availableLessons\": {    \"lesson1\": \"Introduction to Numbers\",    \"lesson2\": \"Basic Addition\",    \"lesson3\": \"Counting Objects\"  },  \"currentLessonData\": {    \"id\": \"lesson1\",    \"title\": \"Introduction to Numbers\",    \"description\": \"An introduction to basic numbers.\",    \"concepts\": [\"counting\", \"number_identity\"],    \"subject\": \"Math\",    \"progress\": \"in-progress\",    \"quizzes\": [      { \"id\": \"quizA\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [] }    ],    \"nextLesson\": \"lesson2\",    \"prevLesson\": null  }}"},
@@ -88,33 +116,81 @@ async function run() {
     {text: "output: {\n  \"responseText\": \"Not quite. Remember, we're looking for the number that comes right after 4 when counting. Think about counting: 1, 2, 3, 4, ... What's next?\",\n  \"action\": null,\n  \"reasoning\": \"The user answered the question incorrectly and needs to try again.\",\n  \"contextUpdates\": null\n}"},
     {text: "input: {  \"currentUserMessage\": \"Start lesson2\",  \"currentLlmContext\": {    \"studentProfile\": {      \"name\": \"Alex\",      \"grade\": 5,      \"age\": 10,      \"learningStyle\": \"Visual\",      \"challenges\": []    },    \"currentLesson\": null,    \"currentQuiz\": null,    \"progressHistory\": [],    \"recentInteractions\": [],    \"conceptsIntroduced\": [],    \"conceptsMastered\": [],    \"conceptsStruggling\": []  },  \"availableLessons\": {    \"lesson1\": \"Introduction to Numbers\",    \"lesson2\": \"Basic Addition\",    \"lesson3\": \"Counting Objects\"  },  \"currentLessonData\": null}"},
     {text: "output: {\n  \"responseText\": \"Great! Let's begin with lesson 'Basic Addition'. I'll bring up the overview.\",\n  \"action\": {\n    \"type\": \"showLessonOverview\",\n    \"payload\": {\n      \"lessonId\": \"lesson2\"\n    }\n  },\n  \"reasoning\": \"User wants to start lesson2, no active lesson. Initiating lesson2 overview.\",\n  \"contextUpdates\": null\n}"},
-    {text: "input: {  \"currentUserMessage\": \"show quiz B\",  \"currentLlmContext\": {    \"studentProfile\": {      \"name\": \"Alex\",      \"grade\": 5,      \"age\": 10,      \"learningStyle\": \"Visual\",      \"challenges\": []    },    \"currentLesson\": {      \"id\": \"lesson1\",      \"data\": {        \"id\": \"lesson1\",        \"title\": \"Introduction to Numbers\",        \"description\": \"An introduction to basic numbers.\",        \"concepts\": [\"counting\", \"number_identity\"],        \"subject\": \"Math\",        \"progress\": \"in-progress\",        \"quizzes\": [          { \"id\": \"quizA\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [ { \"question\": \"What number comes after 4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },          { \"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \"concepts\": [\"counting\"], \"items\": [] }        ],        \"nextLesson\": \"lesson2\",        \"prevLesson\": null      },      \"startTime\": \"2025-03-31T10:15:00.000Z\",      \"progressPercentage\": 50    },    \"currentQuiz\": null,    \"progressHistory\": [],    \"recentInteractions\": [      { \"user\": \"Let's begin\" },      { \"ai_response\": { \"action\": { \"type\": \"showLessonOverview\", \"payload\": { \"lessonId\": \"lesson1\" } } } },      { \"user\": \"Okay, show me the first activity\" },      { \"ai_response\": { \"action\": { \"type\": \"showQuiz\", \"payload\": { \"lessonId\": \"lesson1\", \"quizId\": \"quizA\" } } } },      { \"user\": \"I think it's 5\" },      { \"ai_response\": { \"responseText\": \"Yes, that's correct! 5 comes after 4. Great job!\", \"contextUpdates\": { \"conceptsMastered\": [\"number_identity\"] } } }    ],    \"conceptsIntroduced\": [\"counting\", \"number_identity\"],    \"conceptsMastered\": [\"number_identity\"],    \"conceptsStruggling\": []  },  \"availableLessons\": {    \"lesson1\": \"Introduction to Numbers\",    \"lesson2\": \"Basic Addition\",    \"lesson3\": \"Counting Objects\"  },  \"currentLessonData\": {    \"id\": \"lesson1\",    \"title\": \"Introduction to Numbers\",    \"description\": \"An introduction to basic numbers.\",    \"concepts\": [\"counting\", \"number_identity\"],    \"subject\": \"Math\",    \"progress\": \"in-progress\",    \"quizzes\": [      { \"id\": \"quizA\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [ { \"question\": \"What number comes after 4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },      { \"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \"concepts\": [\"counting\"], \"items\": [] }    ],    \"nextLesson\": \"lesson2\",    \"prevLesson\": null  }}"},
-    {text: "output: {\n  \"responseText\": \"Okay, here is the 'Counting Practice' activity.\",\n  \"action\": {\n    \"type\": \"showQuiz\",\n    \"payload\": {\n      \"lessonId\": \"lesson1\",\n      \"quizId\": \"quizB\"\n    }\n  },\n  \"reasoning\": \"The user specifically requested quiz B.\",\n  \"contextUpdates\": null\n}"},
-    {text: "input: { \n \"currentUserMessage\": \"show quiz B\",  \"currentLlmContext\": {    \n\"studentProfile\": {      \"name\": \"Alex\",      \"grade\": 5,      \"age\": \n10,      \"learningStyle\": \"Visual\",      \"challenges\": []    },    \n\"currentLesson\": {      \"id\": \"lesson1\",      \"data\": {        \"id\": \n\"lesson1\",        \"title\": \"Introduction to Numbers\",        \n\"description\": \"An introduction to basic numbers.\",        \"concepts\": \n[\"counting\", \"number_identity\"],        \"subject\": \"Math\",        \n\"progress\": \"in-progress\",        \"quizzes\": [          { \"id\": \"quizA\",\n \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": \n[\"number_identity\"], \"items\": [ { \"question\": \"What number comes after \n4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \n\"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },          {\n \"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \n\"concepts\": [\"counting\"], \"items\": [] }        ],        \"nextLesson\": \n\"lesson2\",        \"prevLesson\": null      },      \"startTime\": \n\"2025-03-31T10:15:00.000Z\",      \"progressPercentage\": 50    },    \n\"currentQuiz\": null,    \"progressHistory\": [],    \"recentInteractions\": \n[      { \"user\": \"Let's begin\" },      { \"ai_response\": { \"action\": { \n\"type\": \"showLessonOverview\", \"payload\": { \"lessonId\": \"lesson1\" } } } \n},      { \"user\": \"Okay, show me the first activity\" },      { \n\"ai_response\": { \"action\": { \"type\": \"showQuiz\", \"payload\": { \n\"lessonId\": \"lesson1\", \"quizId\": \"quizA\" } } } },      { \"user\": \"I \nthink it's 5\" },      { \"ai_response\": { \"responseText\": \"Yes, that's \ncorrect! 5 comes after 4. Great job!\", \"contextUpdates\": { \n\"conceptsMastered\": [\"number_identity\"] } } }    ],    \n\"conceptsIntroduced\": [\"counting\", \"number_identity\"],    \n\"conceptsMastered\": [\"number_identity\"],    \"conceptsStruggling\": []  \n},  \"availableLessons\": {    \"lesson1\": \"Introduction to Numbers\",    \n\"lesson2\": \"Basic Addition\",    \"lesson3\": \"Counting Objects\"  },  \n\"currentLessonData\": {    \"id\": \"lesson1\",    \"title\": \"Introduction to \nNumbers\",    \"description\": \"An introduction to basic numbers.\",    \n\"concepts\": [\"counting\", \"number_identity\"],    \"subject\": \"Math\",    \n\"progress\": \"in-progress\",    \"quizzes\": [      { \"id\": \"quizA\", \n\"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": \n[\"number_identity\"], \"items\": [ { \"question\": \"What number comes after \n4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \n\"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },      { \n\"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \"concepts\":\n [\"counting\"], \"items\": [] }    ],    \"nextLesson\": \"lesson2\",    \n\"prevLesson\": null  }}"},
-    {text: "output: "},
+    {text: "input: {  \"currentUserMessage\": \"show quiz 1\",  \"currentLlmContext\": {    \"studentProfile\": {      \"name\": \"Alex\",      \"grade\": 5,      \"age\": 10,      \"learningStyle\": \"Visual\",      \"challenges\": []    },    \"currentLesson\": {      \"id\": \"lesson1\",      \"data\": {        \"id\": \"lesson1\",        \"title\": \"Introduction to Numbers\",        \"description\": \"An introduction to basic numbers.\",        \"concepts\": [\"counting\", \"number_identity\"],        \"subject\": \"Math\",        \"progress\": \"in-progress\",        \"quizzes\": [          { \"id\": \"quiz1\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [ { \"question\": \"What number comes after 4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },          { \"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \"concepts\": [\"counting\"], \"items\": [] }        ],        \"nextLesson\": \"lesson2\",        \"prevLesson\": null      },      \"startTime\": \"2025-03-31T10:15:00.000Z\",      \"progressPercentage\": 50    },    \"currentQuiz\": null,    \"progressHistory\": [],    \"recentInteractions\": [      { \"user\": \"Let's begin\" },      { \"ai_response\": { \"action\": { \"type\": \"showLessonOverview\", \"payload\": { \"lessonId\": \"lesson1\" } } } },      { \"user\": \"Okay, show me the first activity\" },      { \"ai_response\": { \"action\": { \"type\": \"showQuiz\", \"payload\": { \"lessonId\": \"lesson1\", \"quizId\": \"quizA\" } } } },      { \"user\": \"I think it's 5\" },      { \"ai_response\": { \"responseText\": \"Yes, that's correct! 5 comes after 4. Great job!\", \"contextUpdates\": { \"conceptsMastered\": [\"number_identity\"] } } }    ],    \"conceptsIntroduced\": [\"counting\", \"number_identity\"],    \"conceptsMastered\": [\"number_identity\"],    \"conceptsStruggling\": []  },  \"availableLessons\": {    \"lesson1\": \"Introduction to Numbers\",    \"lesson2\": \"Basic Addition\",    \"lesson3\": \"Counting Objects\"  },  \"currentLessonData\": {    \"id\": \"lesson1\",    \"title\": \"Introduction to Numbers\",    \"description\": \"An introduction to basic numbers.\",    \"concepts\": [\"counting\", \"number_identity\"],    \"subject\": \"Math\",    \"progress\": \"in-progress\",    \"quizzes\": [      { \"id\": \"quizA\", \"title\": \"Number Recognition\", \"type\": \"multiple-choice\", \"concepts\": [\"number_identity\"], \"items\": [ { \"question\": \"What number comes after 4?\", \"options\": [ { \"text\": \"3\", \"correct\": false }, { \"text\": \"5\", \"correct\": true }, { \"text\": \"6\", \"correct\": false } ] } ] },      { \"id\": \"quizB\", \"title\": \"Counting Practice\", \"type\": \"list\", \"concepts\": [\"counting\"], \"items\": [] }    ],    \"nextLesson\": \"lesson2\",    \"prevLesson\": null  }}"},
+    {text: "output: {\n  \"responseText\": \"Okay, here is the 'Counting Practice' activity.\",\n  \"action\": {\n    \"type\": \"showQuiz\",\n    \"payload\": {\n      \"lessonId\": \"lesson1\",\n      \"quizId\": \"quiz1\"\n    }\n  },\n  \"reasoning\": \"The user specifically requested quiz 1.\",\n  \"contextUpdates\": null\n}"},
+    {
+      text: `input: ${JSON.stringify({
+        currentUserMessage,
+        currentLlmContext,
+        availableLessons,
+        currentLessonData // Include if available
+      })}`
+    },
+    { text: "output: " } // Instruct the model to start the output
   ];
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts }],
-    generationConfig,
-  });
-  // TODO: Following code needs to be updated for client-side apps.
-  const candidates = result.response.candidates;
-  for(let candidate_index = 0; candidate_index < candidates.length; candidate_index++) {
-    for(let part_index = 0; part_index < candidates[candidate_index].content.parts.length; part_index++) {
-      const part = candidates[candidate_index].content.parts[part_index];
-      if(part.inlineData) {
-        try {
-          const filename = `output_${candidate_index}_${part_index}.${mime.extension(part.inlineData.mimeType)}`;
-          fs.writeFileSync(filename, Buffer.from(part.inlineData.data, 'base64'));
-          console.log(`Output written to: ${filename}`);
-        } catch (err) {
-          console.error(err);
-        }
-      }
-    }
-  }
-  console.log(result.response.text());
-}
+  try {
+    console.log("Sending request to Gemini with parts:", JSON.stringify(parts, null, 2)); // Log input parts
+    const result = await model.generateContent({
+      contents: [{ role: "user", parts }],
+      generationConfig,
+      safetySettings,
+    });
 
-run();
+    console.log("Received response from Gemini.");
+
+    // --- Response Handling ---
+    if (!result.response) {
+        console.error("Gemini response was undefined.");
+        throw new Error("No response received from LLM.");
+    }
+
+    const candidates = result.response.candidates;
+    if (!candidates || candidates.length === 0 || !candidates[0].content || !candidates[0].content.parts || candidates[0].content.parts.length === 0) {
+        console.error("Invalid response structure from Gemini:", JSON.stringify(result.response, null, 2));
+        // Check for safety feedback
+        if (result.response.promptFeedback?.blockReason) {
+             console.error(`Blocked due to: ${result.response.promptFeedback.blockReason}`);
+             return NextResponse.json({ error: `Content blocked by safety filters: ${result.response.promptFeedback.blockReason}` }, { status: 400 });
+        }
+        throw new Error("Invalid or empty response content from LLM.");
+    }
+
+    const responseText = candidates[0].content.parts[0].text;
+    console.log("Raw response text received from Gemini:", responseText); // Log raw response text
+    if (!responseText) {
+        console.error("Empty text part in Gemini response:", JSON.stringify(candidates[0].content.parts, null, 2));
+        throw new Error("Empty response text from LLM.");
+    }
+
+    // Attempt to parse the JSON response text
+    let parsedResponse;
+    try {
+        // Attempt to extract JSON block if wrapped in markdown
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        const match = responseText.match(jsonRegex);
+        const jsonToParse = match ? match[1].trim() : responseText.trim(); // Use extracted or trimmed raw text
+
+        if (!jsonToParse) {
+             console.error("Extracted JSON string is empty.");
+             throw new Error("Empty JSON content from LLM response.");
+        }
+
+        parsedResponse = JSON.parse(jsonToParse);
+        console.log("Successfully parsed Gemini JSON response.");
+    } catch (parseError) {
+        console.error("Error parsing Gemini JSON response:", parseError);
+        console.error("Raw response text received from Gemini:", responseText); // Log raw text for debugging
+        // Return a specific error response to the client
+        return NextResponse.json({ error: "Failed to parse LLM response as JSON." }, { status: 500 });
+    }
+
+    // Return the parsed JSON object
+    return NextResponse.json(parsedResponse);
+
+  } catch (error) {
+    console.error("Error calling Gemini API:", error);
+    const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
+    return NextResponse.json({ error: `LLM API call failed: ${errorMessage}` }, { status: 500 });
+  }
+}
