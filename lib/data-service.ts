@@ -20,7 +20,7 @@ export async function getSubjects(): Promise<Subject[]> {
  * In a real app, this would fetch from an API or database.
  */
 export async function getLessons(): Promise<Lesson[]> {
-    const { lessons } = await import('@/data/mock-data/lesson-data');
+    const { lessons } = await import('@/data/lessons'); // Corrected import path
     await delay(SIMULATED_DELAY_MS);
     return lessons;
 }

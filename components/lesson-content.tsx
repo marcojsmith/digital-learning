@@ -1,7 +1,10 @@
 "use client"
 
 import type React from "react"
-import type { Lesson, LessonQuiz } from "@/types"
+import ReactMarkdown, { type Components } from 'react-markdown'
+// Removed unstable import: import { type CodeProps } from 'react-markdown/lib/ast-to-react'
+import remarkGfm from 'remark-gfm'
+import type { Lesson, LessonQuiz, LessonQuizItem } from "@/types" // Added LessonQuizItem
 
 interface LessonContentProps {
   lesson: Lesson
@@ -12,8 +15,45 @@ interface LessonContentProps {
   // Removed onNavigateRequest and onShowQuiz
 }
 
-// Helper Function to Render Specific Quiz (remains the same)
+// Helper Function to Render Specific Quiz (updated for Markdown)
 const renderQuiz = (quiz: LessonQuiz) => {
+  // Common Markdown components configuration
+  const markdownComponents: Components = { // Add Components type
+    // Handle custom image placeholder syntax: ![Alt text](placeholder:description)
+    img: ({ node, ...props }: { node?: any; src?: string; alt?: string }) => {
+      if (props.src?.startsWith('placeholder:')) {
+        const description = props.src.substring('placeholder:'.length);
+        return (
+          <span className="block text-center p-4 border border-dashed border-gray-400 rounded my-4 bg-gray-50 dark:bg-gray-800">
+            🖼️ Image Placeholder: {props.alt || description || 'No description provided'}
+          </span>
+        );
+      }
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img {...props} alt={props.alt || ''} />; // Default rendering for other images
+    },
+    // Optional: Add custom styling or handling for other elements like code blocks
+    code({ node, inline, className, children, ...props }: { node?: any; inline?: boolean; className?: string; children?: React.ReactNode }) { // Define type inline
+      const match = /language-(\w+)/.exec(className || '')
+      return !inline && match ? (
+        <div className="my-4 rounded bg-gray-900 dark:bg-black overflow-hidden">
+          <div className="px-4 py-1 bg-gray-700 dark:bg-gray-800 text-xs text-gray-300 font-mono flex justify-between items-center">
+            <span>{match[1]}</span>
+            {/* Add copy button? */}
+          </div>
+          <pre className="p-4 text-sm text-gray-100 overflow-x-auto"><code className={className} {...props}>
+            {children}
+          </code></pre>
+        </div>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      )
+    }
+  };
+
+  // Render quiz based on type
     // ... (renderQuiz implementation remains unchanged)
     return (
         <div className="bg-light-gray p-6 rounded-lg mt-6 border border-medium-gray">
@@ -22,7 +62,7 @@ const renderQuiz = (quiz: LessonQuiz) => {
                 <ol className="list-decimal list-inside space-y-2">
                     {quiz.items.map(item => (
                         <li key={item.letter}>
-                            {item.question}
+                            {item.question ? <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{item.question}</ReactMarkdown> : null}
                             <span className="inline-block border-b border-gray-400 min-w-[80px] ml-2"></span>
                         </li>
                     ))}
@@ -65,7 +105,7 @@ const renderQuiz = (quiz: LessonQuiz) => {
             )}
             {quiz.type === "multiple-choice" && quiz.question && quiz.options && (
                  <div>
-                    <p className="mb-3" dangerouslySetInnerHTML={{ __html: quiz.question }} />
+                    {quiz.question && <div className="mb-3 prose prose-indigo max-w-none dark:prose-invert"><ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{quiz.question}</ReactMarkdown></div>}
                     <ul className="list-none p-0 mb-5">
                        {quiz.options.map((option, index) => (
                          <li key={index} className="block p-3 my-2 bg-white rounded border border-medium-gray cursor-not-allowed opacity-70">
@@ -129,14 +169,58 @@ export default function LessonContent({
         {quizToShow && <span className="text-lg font-normal text-gray-600"> - {quizToShow.title}</span>}
       </h2>
 
+      {/* --- Content Rendering Logic --- */}
       {quizToShow ? (
+        // If a quiz is active, render the quiz
         renderQuiz(quizToShow)
+      ) : lesson.contentMarkdown ? (
+        // If no quiz, render the main lesson Markdown content
+        <div className="prose prose-indigo max-w-none dark:prose-invert">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              // Handle custom image placeholder syntax: ![Alt text](placeholder:description)
+              img: ({ node, ...props }) => {
+                if (props.src?.startsWith('placeholder:')) {
+                  const description = props.src.substring('placeholder:'.length);
+                  return (
+                    <span className="block text-center p-4 border border-dashed border-gray-400 rounded my-4 bg-gray-50 dark:bg-gray-800">
+                      🖼️ Image Placeholder: {props.alt || description || 'No description provided'}
+                    </span>
+                  );
+                }
+                // eslint-disable-next-line @next/next/no-img-element
+                return <img {...props} alt={props.alt || ''} />; // Default rendering for other images
+              },
+              // Optional: Add custom styling or handling for other elements like code blocks
+              code({ node, inline, className, children, ...props }: { node?: any; inline?: boolean; className?: string; children?: React.ReactNode }) { // Define type inline
+                const match = /language-(\w+)/.exec(className || '')
+                return !inline && match ? (
+                  <div className="my-4 rounded bg-gray-900 dark:bg-black overflow-hidden">
+                    <div className="px-4 py-1 bg-gray-700 dark:bg-gray-800 text-xs text-gray-300 font-mono flex justify-between items-center">
+                      <span>{match[1]}</span>
+                      {/* Add copy button? */}
+                    </div>
+                    <pre className="p-4 text-sm text-gray-100 overflow-x-auto"><code className={className} {...props}>
+                      {children}
+                    </code></pre>
+                  </div>
+                ) : (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                )
+              }
+            }}
+          >
+            {lesson.contentMarkdown}
+          </ReactMarkdown>
+        </div>
       ) : (
-        <div
-            className="prose max-w-none lesson-description-html"
-            dangerouslySetInnerHTML={{ __html: lesson.description }}
-        />
+        // Fallback: If no content at all (neither quiz nor lesson markdown)
+        <p className="text-gray-500 italic">No content available for this section.</p>
       )}
+      {/* --- End Content Rendering Logic --- */}
 
       {/* Updated Navigation Logic */}
       <div className="flex justify-between mt-8 pt-5 border-t border-medium-gray">

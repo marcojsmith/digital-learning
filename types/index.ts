@@ -31,7 +31,7 @@ export interface Lesson {
   id: string // e.g., "lesson1"
   lessonId?: string; // Restored as optional, as components might reference it
   title: string
-  description: string // Replaced 'content'
+  contentMarkdown: string // Renamed from 'description', expects Markdown
   concepts: string[] // Added concepts
   subject: string
   progress: "completed" | "in-progress" | "not-started"

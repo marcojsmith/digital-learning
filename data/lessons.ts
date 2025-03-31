@@ -21,20 +21,7 @@ export const subjects: Subject[] = [
   },
 ]
 
-// Helper to roughly extract text from simple HTML content
-const extractText = (html: string): string => {
-    try {
-        // Basic removal of tags, works for simple cases
-        let text = html.replace(/<style[^>]*>.*<\/style>/gm, ''); // Removed 's' flag
-        text = text.replace(/<script[^>]*>.*<\/script>/gm, ''); // Removed 's' flag
-        text = text.replace(/<[^>]+>/g, ' '); // Replace tags with space
-        text = text.replace(/\s+/g, ' ').trim(); // Collapse multiple spaces
-        return text;
-    } catch (e) {
-        console.error("Error extracting text from HTML:", e);
-        return "Error processing content."; // Fallback
-    }
-}
+// Removed extractText function as content is now Markdown
 
 export const lessons: Lesson[] = [
   // Lesson 1
@@ -43,11 +30,13 @@ export const lessons: Lesson[] = [
     title: "Addition",
     subject: "math",
     progress: "completed",
-    description: extractText(`
-      <p>Addition is the process of combining two or more numbers together to find their <strong>sum</strong>. When we add numbers, we are essentially counting how many objects we have in total.</p>
-      <p>For example, if you have 2 apples and someone gives you 3 more apples, you would use addition to find out that you now have 5 apples in total: 2 + 3 = 5.</p>
-      <p>The plus sign (<strong>+</strong>) is used to show addition. The numbers being added are called <strong>addends</strong>.</p>
-    `),
+    contentMarkdown: `
+Addition is the process of combining two or more numbers together to find their **sum**. When we add numbers, we are essentially counting how many objects we have in total.
+
+For example, if you have 2 apples and someone gives you 3 more apples, you would use addition to find out that you now have 5 apples in total: 2 + 3 = 5.
+
+The plus sign (**+**) is used to show addition. The numbers being added are called **addends**.
+    `,
     concepts: ["addition", "sum", "addends"], // Added example concepts
     quizzes: [
       {
@@ -55,7 +44,7 @@ export const lessons: Lesson[] = [
         title: "Addition Quiz", // Give the quiz a title
         type: "multiple-choice", // Set type
         concepts: ["addition"], // Link concepts
-        question: "What is <strong>2 + 3</strong>?", // Keep question
+        question: "What is **2 + 3**?", // Use Markdown
         options: [ // Keep options
           { text: "4", correct: false },
           { text: "5", correct: true },
@@ -71,11 +60,13 @@ export const lessons: Lesson[] = [
     title: "Subtraction",
     subject: "math",
     progress: "in-progress",
-    description: extractText(`
-      <p>Subtraction is taking away one number from another to find the <strong>difference</strong>. When we subtract, we are finding out how many are left after removing some objects.</p>
-      <p>For example, if you have 5 oranges and you eat 2 of them, you would use subtraction to find out that you have 3 oranges left: 5 - 2 = 3.</p>
-      <p>The minus sign (<strong>-</strong>) is used to show subtraction. The number being subtracted is called the <strong>subtrahend</strong>, the number you're subtracting from is called the <strong>minuend</strong>.</p>
-    `),
+    contentMarkdown: `
+Subtraction is taking away one number from another to find the **difference**. When we subtract, we are finding out how many are left after removing some objects.
+
+For example, if you have 5 oranges and you eat 2 of them, you would use subtraction to find out that you have 3 oranges left: 5 - 2 = 3.
+
+The minus sign (**-**) is used to show subtraction. The number being subtracted is called the **subtrahend**, the number you're subtracting from is called the **minuend**.
+    `,
     concepts: ["subtraction", "difference", "minuend", "subtrahend"],
     quizzes: [
       {
@@ -83,7 +74,7 @@ export const lessons: Lesson[] = [
         title: "Subtraction Quiz",
         type: "multiple-choice",
         concepts: ["subtraction"],
-        question: "What is <strong>5 - 2</strong>?",
+        question: "What is **5 - 2**?", // Use Markdown
         options: [
           { text: "2", correct: false },
           { text: "3", correct: true },
@@ -100,11 +91,13 @@ export const lessons: Lesson[] = [
     title: "Multiplication",
     subject: "math",
     progress: "not-started",
-    description: extractText(`
-      <p>Multiplication is like repeated addition. It's a quick way to add the same number multiple times.</p>
-      <p>For example, 3 x 4 means adding 3 four times (3 + 3 + 3 + 3) or adding 4 three times (4 + 4 + 4). Both equal 12.</p>
-      <p>The numbers being multiplied are called <strong>factors</strong>, and the result is called the <strong>product</strong>. The symbol 'x' or sometimes '*' is used.</p>
-    `),
+    contentMarkdown: `
+Multiplication is like repeated addition. It's a quick way to add the same number multiple times.
+
+For example, 3 x 4 means adding 3 four times (3 + 3 + 3 + 3) or adding 4 three times (4 + 4 + 4). Both equal 12.
+
+The numbers being multiplied are called **factors**, and the result is called the **product**. The symbol 'x' or sometimes '*' is used.
+    `,
     concepts: ["multiplication", "factors", "product", "repeated addition"],
     quizzes: [
       {
@@ -112,7 +105,7 @@ export const lessons: Lesson[] = [
         title: "Multiplication Quiz",
         type: "multiple-choice",
         concepts: ["multiplication"],
-        question: "What is <strong>3 x 4</strong>?",
+        question: "What is **3 x 4**?", // Use Markdown
         options: [
           { text: "7", correct: false },
           { text: "12", correct: true },
@@ -129,11 +122,13 @@ export const lessons: Lesson[] = [
     title: "Division",
     subject: "math",
     progress: "not-started",
-    description: extractText(`
-      <p>Division is splitting a number into equal groups. It's the opposite of multiplication.</p>
-      <p>For example, 12 ÷ 4 asks how many groups of 4 are in 12. The answer is 3.</p>
-      <p>The number being divided is the <strong>dividend</strong>, the number dividing it is the <strong>divisor</strong>, and the result is the <strong>quotient</strong>. The symbol '÷' or '/' is used.</p>
-    `),
+    contentMarkdown: `
+Division is splitting a number into equal groups. It's the opposite of multiplication.
+
+For example, 12 ÷ 4 asks how many groups of 4 are in 12. The answer is 3.
+
+The number being divided is the **dividend**, the number dividing it is the **divisor**, and the result is the **quotient**. The symbol '÷' or '/' is used.
+    `,
     concepts: ["division", "dividend", "divisor", "quotient", "equal groups"],
     quizzes: [
       {
@@ -141,7 +136,7 @@ export const lessons: Lesson[] = [
         title: "Division Quiz",
         type: "multiple-choice",
         concepts: ["division"],
-        question: "What is <strong>12 ÷ 4</strong>?",
+        question: "What is **12 ÷ 4**?", // Use Markdown
         options: [
           { text: "3", correct: true },
           { text: "8", correct: false },
@@ -158,11 +153,13 @@ export const lessons: Lesson[] = [
     title: "Plants",
     subject: "science",
     progress: "not-started",
-    description: extractText(`
-      <p>Plants are living organisms belonging to the kingdom Plantae. They are essential for life on Earth.</p>
-      <p>Most plants perform <strong>photosynthesis</strong>, using sunlight, water, and carbon dioxide to create their own food (sugar) and release oxygen.</p>
-      <p>Key parts often include roots (absorb water/nutrients), stems (support), leaves (photosynthesis), flowers (reproduction), and fruits (contain seeds).</p>
-    `),
+    contentMarkdown: `
+Plants are living organisms belonging to the kingdom Plantae. They are essential for life on Earth.
+
+Most plants perform **photosynthesis**, using sunlight, water, and carbon dioxide to create their own food (sugar) and release oxygen.
+
+Key parts often include roots (absorb water/nutrients), stems (support), leaves (photosynthesis), flowers (reproduction), and fruits (contain seeds).
+    `,
     concepts: ["plants", "photosynthesis", "roots", "stems", "leaves"],
     quizzes: [
       {
@@ -187,11 +184,13 @@ export const lessons: Lesson[] = [
     title: "Animals",
     subject: "science",
     progress: "not-started",
-    description: extractText(`
-      <p>Animals are multicellular organisms from the kingdom Animalia. Unlike plants, they cannot make their own food and must consume other organisms (plants or other animals) for energy.</p>
-      <p>Animals exhibit diverse forms, habitats, and behaviors. They are broadly classified into vertebrates (with backbones) and invertebrates (without backbones).</p>
-      <p>Major groups include mammals, birds, reptiles, amphibians, fish, insects, mollusks, and more.</p>
-    `),
+    contentMarkdown: `
+Animals are multicellular organisms from the kingdom Animalia. Unlike plants, they cannot make their own food and must consume other organisms (plants or other animals) for energy.
+
+Animals exhibit diverse forms, habitats, and behaviors. They are broadly classified into vertebrates (with backbones) and invertebrates (without backbones).
+
+Major groups include mammals, birds, reptiles, amphibians, fish, insects, mollusks, and more.
+    `,
     concepts: ["animals", "kingdom animalia", "vertebrates", "invertebrates"],
     quizzes: [
       {
@@ -216,11 +215,13 @@ export const lessons: Lesson[] = [
     title: "Weather",
     subject: "science",
     progress: "not-started",
-    description: extractText(`
-      <p>Weather refers to the state of the atmosphere at a particular place and time, including temperature, humidity, precipitation (rain, snow), wind, and cloud cover.</p>
-      <p>It is driven by differences in air pressure, temperature, and moisture, often influenced by the sun's energy.</p>
-      <p>Meteorologists study weather patterns to make forecasts. Common weather phenomena include rain, sunshine, storms, fog, and wind.</p>
-    `),
+    contentMarkdown: `
+Weather refers to the state of the atmosphere at a particular place and time, including temperature, humidity, precipitation (rain, snow), wind, and cloud cover.
+
+It is driven by differences in air pressure, temperature, and moisture, often influenced by the sun's energy.
+
+Meteorologists study weather patterns to make forecasts. Common weather phenomena include rain, sunshine, storms, fog, and wind.
+    `,
     concepts: ["weather", "atmosphere", "temperature", "humidity", "precipitation", "wind"],
     quizzes: [
       {
@@ -245,11 +246,13 @@ export const lessons: Lesson[] = [
     title: "Grammar Basics",
     subject: "language",
     progress: "not-started",
-    description: extractText(`
-      <p>Grammar is the set of rules governing how words are combined to form sentences in a language.</p>
-      <p>Key components include parts of speech (nouns, verbs, adjectives, adverbs, etc.), sentence structure (subject, predicate), punctuation (periods, commas), and tense (past, present, future).</p>
-      <p>Understanding grammar helps us communicate clearly and effectively in writing and speaking.</p>
-    `),
+    contentMarkdown: `
+Grammar is the set of rules governing how words are combined to form sentences in a language.
+
+Key components include parts of speech (nouns, verbs, adjectives, adverbs, etc.), sentence structure (subject, predicate), punctuation (periods, commas), and tense (past, present, future).
+
+Understanding grammar helps us communicate clearly and effectively in writing and speaking.
+    `,
     concepts: ["grammar", "parts of speech", "sentence structure", "punctuation", "tense"],
     quizzes: [
       {
@@ -274,11 +277,13 @@ export const lessons: Lesson[] = [
     title: "Reading Comprehension",
     subject: "language",
     progress: "not-started",
-    description: extractText(`
-      <p>Reading comprehension is the ability to read text, process it, and understand its meaning.</p>
-      <p>It involves identifying the main idea, understanding vocabulary in context, making inferences, understanding sequence, and recognizing details.</p>
-      <p>Strong reading comprehension is crucial for learning and understanding information from various sources.</p>
-    `),
+    contentMarkdown: `
+Reading comprehension is the ability to read text, process it, and understand its meaning.
+
+It involves identifying the main idea, understanding vocabulary in context, making inferences, understanding sequence, and recognizing details.
+
+Strong reading comprehension is crucial for learning and understanding information from various sources.
+    `,
     concepts: ["reading comprehension", "main idea", "inference", "vocabulary in context"],
     quizzes: [
       {
