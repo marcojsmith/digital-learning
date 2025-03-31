@@ -57,7 +57,11 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                 getInitialStudentProfile(),
                 getChatLessonDatabase()
             ]);
-            setLlmContext(prev => ({ ...prev, studentProfile: profile }));
+            setLlmContext(prev => ({
+                ...prev,
+                studentProfile: profile,
+                recentInteractions: [] // Clear history on initial load
+            }));
             setChatDb(database);
         } catch (error) {
             logger.error("Error fetching initial chat data", { ...(error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : { error }), component: 'Chat' });
@@ -123,6 +127,12 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     setIsProcessing(true);
     const userMessage: ChatMessage = { text: messageText, type: "user" };
     setMessages((prev) => [...prev, userMessage]);
+
+    // Add user message to interactions history *before* API call
+    setLlmContext(prev => ({
+        ...prev,
+        recentInteractions: [...prev.recentInteractions, { user: messageText }]
+    }));
 
     const typingMessage: ChatMessage = { text: "Assistant is typing...", type: "typing" };
     setMessages((prev) => [...prev, typingMessage]);
@@ -241,6 +251,15 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     // Add AI response message
     const aiMessage: ChatMessage = { text: responseText, type: "ai" };
     setMessages((prev) => [...prev, aiMessage]);
+
+    // Add AI response to interactions history *after* API call and state update
+    // Note: We might need to refine what exactly constitutes the 'ai_response' object
+    // based on how buildChatHistory formats it on the backend.
+    // For now, storing the core parts.
+    setLlmContext(prev => ({
+        ...prev,
+        recentInteractions: [...prev.recentInteractions, { ai_response: { responseText, action, contextUpdates, flagsPreviousMessageAsInappropriate } }]
+    }));
 
      // Handle actions that modify local context *after* API call & context updates
      // These ensure the local state matches the intended state after an action
