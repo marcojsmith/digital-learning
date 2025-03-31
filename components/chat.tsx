@@ -27,6 +27,7 @@ interface LlmResponse {
     lessonId?: string | null;
     quizId?: string | null;
     contextUpdates?: Partial<LlmContext> | null;
+    lessonMarkdownContent?: string | null; // Added for generated lessons
     flagsPreviousMessageAsInappropriate?: boolean | null;
     reasoning?: string;
 }
@@ -152,6 +153,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     let quizId: string | null = null;
     let contextUpdates: Partial<LlmContext> | null = null;
     let flagsPreviousMessageAsInappropriate: boolean | null = null;
+    let lessonMarkdownContent: string | null = null; // Declare variable here
 
     // --- Call the API Route ---
     let apiResponse: LlmApiResponse = { llmResponse: { responseText: '' } };
@@ -222,6 +224,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
             quizId = llmResponse?.quizId || null;
             contextUpdates = llmResponse?.contextUpdates || null;
             flagsPreviousMessageAsInappropriate = llmResponse?.flagsPreviousMessageAsInappropriate || null;
+            lessonMarkdownContent = llmResponse?.lessonMarkdownContent || null; // Assign value here
 
             // --- Update LLM Context based on API response ---
             setLlmContext(prev => {
@@ -328,7 +331,8 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
          const actionPayload: ChatAction = {
              actionType: actionType as ActionType, // Cast as ActionType from types/index.ts
              lessonId: lessonId,
-             quizId: quizId
+             quizId: quizId,
+             lessonMarkdownContent: lessonMarkdownContent // Include the markdown content in the payload
          };
          logger.info(`Calling onAction prop for UI update`, { component: 'Chat', action: actionPayload });
          onAction(actionPayload); // Call the prop function passed from the parent

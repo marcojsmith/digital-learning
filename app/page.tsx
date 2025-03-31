@@ -21,6 +21,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   // State for simulated message
   const [simulatedMessageToSend, setSimulatedMessageToSend] = useState<{ text: string; id: number } | null>(null);
+  const [generatedLessonContent, setGeneratedLessonContent] = useState<string | null>(null); // State for dynamically generated content
 
   const isMobile = useMobile()
 
@@ -90,6 +91,7 @@ export default function Home() {
         case "showLessonOverview":
             if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
                 setCurrentLessonId(action.lessonId);
+                setGeneratedLessonContent(null); // Clear generated content
                 setCurrentQuizIdToShow(null);
             } else {
                  console.warn("showLessonOverview action received without valid lessonId", { action });
@@ -102,6 +104,7 @@ export default function Home() {
                     if (currentLessonId !== action.lessonId) {
                         setCurrentLessonId(action.lessonId); // Switch lesson if needed
                     }
+                    setGeneratedLessonContent(null); // Clear generated content
                     setCurrentQuizIdToShow(action.quizId);
                 } else {
                     console.warn(`Attempted to show non-existent quiz: ${action.lessonId}/${action.quizId}`, { action });
@@ -122,16 +125,31 @@ export default function Home() {
                  if (currentLessonId !== action.lessonId) {
                     setCurrentLessonId(action.lessonId); // Switch lesson if needed
                  }
+                 setGeneratedLessonContent(null); // Clear generated content
                  setCurrentQuizIdToShow(null); // Always hide quiz when returning to overview
             } else {
                  console.warn("returnToLessonOverview action received without valid lessonId", { action });
             }
             break;
+        case "generateFullLesson":
+            // Handle dynamically generated lesson content
+            console.log("[generateFullLesson] Received action:", JSON.stringify(action, null, 2));
+            if (action.lessonMarkdownContent) {
+                console.log("[generateFullLesson] lessonMarkdownContent received (snippet):", action.lessonMarkdownContent.substring(0, 100) + '...');
+                setGeneratedLessonContent(action.lessonMarkdownContent); // Store the generated content
+                setCurrentLessonId(null); // Clear current lesson ID to show generated content
+                setCurrentQuizIdToShow(null); // Ensure no quiz is shown
+                console.log("[generateFullLesson] Stored generated content and cleared currentLessonId.");
+            } else {
+                 console.warn("[generateFullLesson] Failed: lessonMarkdownContent is missing.", { action });
+            }
+            break;
         // Add cases for showPreviousQuiz, showNextQuiz if needed by UI logic later
         default:
-            console.log("Unhandled chat action type:", action.actionType, { action });
+             // Log any action type that falls through to the default case.
+             console.log("Unhandled chat action type:", action.actionType, { action });
+             }
     }
-  };
 
   // Removed handleNavigateRequest and handleShowQuiz
 
@@ -158,24 +176,66 @@ export default function Home() {
   }
 
   const renderMainContent = () => {
-    if (!currentLesson) {
+    // Priority 1: Display dynamically generated content if available
+    if (generatedLessonContent) {
+        // Extract title from Markdown H1
+        const extractTitleFromMarkdown = (markdown: string): string => {
+          const lines = markdown.split('\n');
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('# ')) {
+              // Found H1, extract title after '# '
+              return trimmedLine.substring(2).trim();
+            }
+          }
+          // Fallback if no H1 found
+          return "Generated Lesson";
+        };
+        const extractedTitle = extractTitleFromMarkdown(generatedLessonContent);
+
+        // Create a temporary Lesson object for display using the extracted title
+        const generatedLesson: Lesson = {
+            id: 'generated-lesson', // Temporary ID
+            title: extractedTitle, // Use extracted title
+            contentMarkdown: generatedLessonContent,
+            concepts: [], // No predefined concepts
+            subject: 'Generated', // Placeholder subject
+            progress: 'not-started', // Not applicable
+            quizzes: [], // No quizzes
+        };
         return (
-            <div className="text-center p-10">
-                <h1 className="text-2xl font-semibold mb-4">Welcome!</h1>
-                <p>Select a lesson from the left sidebar or ask the assistant to start.</p>
-            </div>
+            <LessonContent
+                key={`generated-lesson-${Date.now()}`} // Use timestamp for unique key
+                lesson={generatedLesson}
+                allLessons={lessonsData} // Pass existing lessons for context if needed by component
+                currentQuizIdToShow={null} // No quiz for generated content
+                onSimulateUserMessage={handleSimulateUserMessage}
+                onLessonComplete={() => { /* No completion for generated */ }} // Disable completion
+                // Removed onNavigateRequest and onShowQuiz
+            />
         );
-    } else {
+    }
+    // Priority 2: Display the currently selected lesson if no generated content
+    else if (currentLesson) {
         return (
             <LessonContent
                 key={`${currentLessonId}-${currentQuizIdToShow}`}
                 lesson={currentLesson}
                 allLessons={lessonsData}
                 currentQuizIdToShow={currentQuizIdToShow}
-                onSimulateUserMessage={handleSimulateUserMessage} // Pass new handler
+                onSimulateUserMessage={handleSimulateUserMessage}
                 onLessonComplete={handleLessonComplete}
                 // Removed onNavigateRequest and onShowQuiz
             />
+        );
+    }
+    // Priority 3: Show welcome message if nothing else is selected/generated
+    else {
+        return (
+            <div className="text-center p-10">
+                <h1 className="text-2xl font-semibold mb-4">Welcome!</h1>
+                <p>Select a lesson from the left sidebar or ask the assistant to start.</p>
+            </div>
         );
     }
   };

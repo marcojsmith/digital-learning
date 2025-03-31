@@ -75,6 +75,7 @@ export type ActionType =
   | "returnToLessonOverview"
   | "showPreviousQuiz"
   | "showNextQuiz"
+  | "generateFullLesson" // Added for full lesson generation
   | null; // Added null based on LLMResponse definition
 
 // Updated ChatAction interface reflecting the flattened structure
@@ -82,6 +83,7 @@ export interface ChatAction {
   actionType: ActionType;
   lessonId?: string | null; // Corresponds to old payload.lessonId
   quizId?: string | null;   // Corresponds to old payload.quizId
+  lessonMarkdownContent?: string | null; // Added for generateFullLesson action
   // Note: flagsPreviousMessageAsInappropriate is handled separately from the action intent.
 }
 

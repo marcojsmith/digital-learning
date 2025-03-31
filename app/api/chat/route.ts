@@ -79,7 +79,7 @@ const generationConfig: GenerationConfig = { // Explicitly type the config
   temperature: 0.1, // Adjust for creativity vs consistency
   topP: 0.95,
   topK: 40,
-  maxOutputTokens: 500, // Reduced token limit as requested
+  maxOutputTokens: 1000, // Reduced token limit as requested
   responseMimeType: "application/json",
   responseSchema: { // Updated flat schema per PLAN_llm_response_formatting.md
     type: SchemaType.OBJECT,
@@ -88,6 +88,7 @@ const generationConfig: GenerationConfig = { // Explicitly type the config
       actionType: { type: SchemaType.STRING, nullable: true }, // e.g., "showQuiz", "showLessonOverview", null
       lessonId: { type: SchemaType.STRING, nullable: true }, // ID for lesson context
       quizId: { type: SchemaType.STRING, nullable: true }, // ID for quiz context
+      lessonMarkdownContent: { type: SchemaType.STRING, nullable: true }, // Optional Markdown content for generated lessons
       flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN }, // Required boolean flag
       reasoning: { type: SchemaType.STRING, nullable: true } // Optional explanation
     },
@@ -328,9 +329,18 @@ Ensure ALL fields are present, using null where appropriate. Payloads are MANDAT
             case 'clarifyQuestion':
                 // No specific IDs needed for this action type currently
                 break;
+            case 'generateFullLesson':
+              // This action MUST include the lesson content.
+              if (!parsedResponse.lessonMarkdownContent || typeof parsedResponse.lessonMarkdownContent !== 'string' || parsedResponse.lessonMarkdownContent.trim() === '') {
+                reqLogger.error(`Validation Error: Action 'generateFullLesson' requires a non-empty string 'lessonMarkdownContent'.`, { response: parsedResponse });
+                throw new Error(`LLM response action 'generateFullLesson' missing or invalid 'lessonMarkdownContent'.`);
+              }
+              // No specific IDs are strictly required for *just* generating content,
+              // but lessonId might be present if it's related to an existing lesson context.
+              break;
             default:
-                // Optional: Log if an unknown actionType is received
-                reqLogger.warn(`Received unknown actionType: ${parsedResponse.actionType}`, { response: parsedResponse });
+                // Log if an unknown actionType is received AFTER explicit checks
+                reqLogger.warn(`Received unhandled actionType: ${parsedResponse.actionType}`, { response: parsedResponse });
           }
         }
         reqLogger.debug(`Validation passed for response (v_new). Action Type: ${parsedResponse.actionType || 'null'}`);
