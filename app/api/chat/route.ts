@@ -13,7 +13,9 @@ const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 const model = genAI?.getGenerativeModel({
-  model: "gemini-2.0-flash", // Use a model supporting JSON mode
+  // Use a model supporting JSON mode
+  // model: "gemini-2.0-flash", 
+   model: "gemini-2.5-pro-exp-03-25",
 });
 
 const generationConfig: GenerationConfig = { // Explicitly type the config
@@ -178,6 +180,30 @@ export async function POST(request: Request) {
 
         parsedResponse = JSON.parse(jsonToParse);
         console.log("Successfully parsed Gemini JSON response.");
+
+        // --- Start Payload Validation Logic ---
+        const requiredPayloadActions = ['showLessonOverview', 'showQuiz', 'completeLesson'];
+        const action = parsedResponse.action; // Assuming parsedResponse holds the parsed JSON
+
+        if (action && requiredPayloadActions.includes(action.type)) {
+          if (!action.payload) {
+            console.error(`Validation Error: Action '${action.type}' requires a payload, but it was missing.`);
+            throw new Error(`LLM response action '${action.type}' missing required payload.`);
+          }
+
+          if ((action.type === 'showLessonOverview' || action.type === 'completeLesson') && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string')) {
+             console.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId'. Payload:`, action.payload);
+             throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId'.`);
+          }
+
+          if (action.type === 'showQuiz' && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string' || !action.payload.quizId || typeof action.payload.quizId !== 'string')) {
+             console.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId' or 'quizId'. Payload:`, action.payload);
+             throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId' or 'quizId'.`);
+          }
+          console.log(`Validation Passed for action type: ${action.type}`);
+        }
+        // --- End Payload Validation Logic ---
+
     } catch (parseError) {
         console.error("Error parsing Gemini JSON response:", parseError);
         console.error("Raw response text received from Gemini:", responseText); // Log raw text for debugging

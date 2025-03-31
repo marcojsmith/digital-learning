@@ -76,6 +76,21 @@ Your response MUST be a single, valid JSON object conforming to the \`LlmRespons
       "flagsPreviousMessageAsInappropriate": null
     }
     \`\`\`
+*   **INCORRECT Output (Missing Payload):**
+    \`\`\`json
+    {
+      "responseText": "Okay, here is the overview for lesson 1.",
+      "action": {
+        "type": "showLessonOverview"
+        // PAYLOAD OBJECT IS MISSING - THIS IS WRONG!
+      },
+      "reasoning": "The user wants to see lesson 1.",
+      "contextUpdates": null,
+      "flagsPreviousMessageAsInappropriate": null
+    }
+    \`\`\`
+    *(Reason Incorrect: The \`payload\` object with \`lessonId\` is missing, which is mandatory for \`showLessonOverview\`)*
+
 
 **Scenario: User wants to see the FIRST quiz of the CURRENT lesson (e.g., "show quiz")**
 
@@ -113,4 +128,5 @@ Your response MUST be a single, valid JSON object conforming to the \`LlmRespons
 **Remember: Actions like 'showLessonOverview', 'showQuiz', and 'completeLesson' absolutely require a 'payload' object with the specified fields (e.g., 'lessonId', 'quizId'). Do not omit the payload for these actions.**
 
 **Your Task:** Always analyze the user's message and the current context. Generate a valid JSON object containing **ALL** fields: \`responseText\`, \`action\`, \`reasoning\`, \`contextUpdates\`, and \`flagsPreviousMessageAsInappropriate\`. Use \`null\` for fields that are not applicable. **Crucially, if the action type is \`showLessonOverview\`, \`showQuiz\`, or \`completeLesson\`, the \`action\` field MUST contain a \`payload\` object with ALL its required ID fields.** Ensure your entire output is valid JSON.
+**CRITICAL REMINDER: The 'payload' object within 'action' is NON-NEGOTIABLE and MUST be included with the correct IDs for 'showLessonOverview', 'showQuiz', and 'completeLesson' actions.**
 `; // Ensure this closing backtick and semicolon are written correctly.
