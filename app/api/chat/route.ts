@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Content, Part } from "@google/generative-ai";
 // Removed duplicate import line
 import type { LlmContext } from '@/types';
-import { SYSTEM_PROMPT_TEXT } from '@/lib/prompts/system-prompt'; // Import the prompt
+import { SYSTEM_PROMPT } from '@/lib/prompts/system-prompt'; // Import the updated prompt constant
 import { logger } from '@/lib/logger'; // Import the new logger
 // --- Utility Functions ---
 function countTokens(obj: any): number {
@@ -42,13 +42,16 @@ function buildChatHistory(systemPrompt: string, interactions: LlmContext['recent
       // Assuming ai_response contains the text in responseText
       if (interaction.ai_response?.responseText) {
         // Construct the full JSON string expected by the model based on its training
+        // Construct the model response part using the NEW flat structure
         const modelResponsePart = {
           text: JSON.stringify({
             responseText: interaction.ai_response.responseText,
-            action: interaction.ai_response.action,
-            reasoning: interaction.ai_response.reasoning,
-            contextUpdates: interaction.ai_response.contextUpdates,
-            flagsPreviousMessageAsInappropriate: interaction.ai_response.flagsPreviousMessageAsInappropriate
+            actionType: interaction.ai_response.actionType, // Use new field
+            lessonId: interaction.ai_response.lessonId,     // Use new field
+            quizId: interaction.ai_response.quizId,         // Use new field
+            flagsPreviousMessageAsInappropriate: interaction.ai_response.flagsPreviousMessageAsInappropriate,
+            reasoning: interaction.ai_response.reasoning
+            // Note: contextUpdates is not part of the new standard response schema
           })
         };
         history.push({ role: "model", parts: [modelResponsePart] });
@@ -60,7 +63,7 @@ function buildChatHistory(systemPrompt: string, interactions: LlmContext['recent
 
 // --- System Prompt ---
 // Use the imported prompt constant
-const systemPromptText = SYSTEM_PROMPT_TEXT;
+const systemPromptText = SYSTEM_PROMPT; // Use the imported constant directly
 
 // --- Gemini Configuration ---
 const apiKey = process.env.GEMINI_API_KEY;
@@ -68,8 +71,8 @@ const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 const model = genAI?.getGenerativeModel({
   // Use a model supporting JSON mode
-  // model: "gemini-2.0-flash",
-   model: "gemini-2.5-pro-exp-03-25",
+   model: "gemini-2.0-flash",
+  // model: "gemini-2.5-pro-exp-03-25",
 });
 
 const generationConfig: GenerationConfig = { // Explicitly type the config
@@ -78,39 +81,18 @@ const generationConfig: GenerationConfig = { // Explicitly type the config
   topK: 40,
   maxOutputTokens: 500, // Reduced token limit as requested
   responseMimeType: "application/json",
-  responseSchema: { // Use SchemaType enum values
-    type: SchemaType.OBJECT, // Corrected: Use enum for top-level type
+  responseSchema: { // Updated flat schema per PLAN_llm_response_formatting.md
+    type: SchemaType.OBJECT,
     properties: {
-      responseText: { type: SchemaType.STRING, nullable: true }, // Allow null
-      action: {
-        type: SchemaType.OBJECT,
-        properties: {
-          type: { type: SchemaType.STRING },
-          payload: { // Define expected optional payload properties
-            type: SchemaType.OBJECT,
-            properties: {
-              lessonId: { type: SchemaType.STRING, nullable: true },
-              quizId: { type: SchemaType.STRING, nullable: true }
-            },
-            // Note: 'required' field is omitted here, making properties optional by default
-          }
-        },
-        nullable: true // Allow action to be null
-      },
-      reasoning: { type: SchemaType.STRING, nullable: true },
-      contextUpdates: {
-        type: SchemaType.OBJECT,
-        nullable: true,
-        properties: { // Define expected optional context update properties
-            conceptsMastered: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
-            conceptsStruggling: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
-            conceptsIntroduced: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, nullable: true },
-            // Add other potential context fields here if needed
-        }
-      },
-      flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN, nullable: true }
+      responseText: { type: SchemaType.STRING }, // Required text response
+      actionType: { type: SchemaType.STRING, nullable: true }, // e.g., "showQuiz", "showLessonOverview", null
+      lessonId: { type: SchemaType.STRING, nullable: true }, // ID for lesson context
+      quizId: { type: SchemaType.STRING, nullable: true }, // ID for quiz context
+      flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN }, // Required boolean flag
+      reasoning: { type: SchemaType.STRING, nullable: true } // Optional explanation
     },
-    required: ["responseText", "action", "reasoning", "contextUpdates", "flagsPreviousMessageAsInappropriate"] // All fields required
+    // Only fields that MUST be present in every response
+    required: ["responseText", "flagsPreviousMessageAsInappropriate"]
   },
 };
 
@@ -209,7 +191,24 @@ export async function POST(request: Request) {
     };
     // We send the payload as a JSON string within the message part, mimicking the input/output structure
     const messageText = `input: ${JSON.stringify(messagePayload)}`;
-    const messageToSend: Part[] = [{ text: messageText }, { text: "output: " }];
+    // Define the format reminder to include in each message
+    const formatReminder = `\n\n**REMINDER:** Your response MUST be a single, valid JSON object matching this structure:
+\`\`\`json
+{
+  "responseText": "string | null",
+  "action": { "type": "string", "payload": { "lessonId": "string | null", "quizId": "string | null" } } | null,
+  "reasoning": "string | null",
+  "contextUpdates": { /* ... */ } | null,
+  "flagsPreviousMessageAsInappropriate": boolean | null
+}
+\`\`\`
+Ensure ALL fields are present, using null where appropriate. Payloads are MANDATORY for showLessonOverview, showQuiz, completeLesson.`;
+
+    const messageToSend: Part[] = [
+        { text: messageText },
+        { text: formatReminder }, // Insert the reminder
+        { text: "\noutput: " } // Add newline before output marker
+    ];
 
     reqLogger.logPayload('llm_request', { message: messageText }); // Log message being sent
 
@@ -275,51 +274,140 @@ export async function POST(request: Request) {
     // Attempt to parse the JSON response text
     let parsedResponse;
     try {
-        // Attempt to extract JSON block if wrapped in markdown
-        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-        const match = responseText.match(jsonRegex);
-        const jsonToParse = match ? match[1].trim() : responseText.trim(); // Use extracted or trimmed raw text
+        // JSON should be returned directly due to responseMimeType: "application/json"
+        const jsonToParse = responseText.trim();
 
         if (!jsonToParse) {
-             reqLogger.error("Extracted JSON string is empty after regex/trim.", { rawResponse: responseText });
+             reqLogger.error("Received empty JSON string from LLM.", { rawResponse: responseText });
              throw new Error("Empty JSON content from LLM response.");
         }
 
         parsedResponse = JSON.parse(jsonToParse);
-        reqLogger.info("Successfully parsed Gemini JSON response.");
+        // Add response_format to the context object
+        reqLogger.info("Successfully parsed Gemini JSON response (v_new).", { response_format: 'v_new' });
         // Extract token usage if available
         const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
         reqLogger.logLlmResult(parsedResponse, tokenUsage); // Log parsed result, timing, and token usage
 
-        // --- Start Payload Validation Logic ---
-        const requiredPayloadActions = ['showLessonOverview', 'showQuiz', 'completeLesson'];
-        const action = parsedResponse.action; // Assuming parsedResponse holds the parsed JSON
-
-        if (action && requiredPayloadActions.includes(action.type)) {
-          if (!action.payload) {
-            reqLogger.error(`Validation Error: Action '${action.type}' requires a payload, but it was missing.`, { action });
-            throw new Error(`LLM response action '${action.type}' missing required payload.`);
-          }
-
-          if ((action.type === 'showLessonOverview' || action.type === 'completeLesson') && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string')) {
-             reqLogger.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId'.`, { payload: action.payload });
-             throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId'.`);
-          }
-
-          if (action.type === 'showQuiz' && (!action.payload.lessonId || typeof action.payload.lessonId !== 'string' || !action.payload.quizId || typeof action.payload.quizId !== 'string')) {
-             reqLogger.error(`Validation Error: Action '${action.type}' payload missing or invalid 'lessonId' or 'quizId'.`, { payload: action.payload });
-             throw new Error(`LLM response payload for '${action.type}' missing required 'lessonId' or 'quizId'.`);
-          }
-          reqLogger.debug(`Payload validation passed for action type: ${action.type}`);
+        // --- Start New Validation Logic (per PLAN_llm_response_formatting.md) ---
+        // Basic required field checks (already covered by schema 'required', but good for runtime safety)
+        if (parsedResponse.responseText === undefined || parsedResponse.responseText === null) {
+            reqLogger.error('Validation Error: responseText is missing or null.', { response: parsedResponse });
+            throw new Error('LLM response missing required field: responseText');
         }
-        // --- End Payload Validation Logic ---
+        // Ensure flagsPreviousMessageAsInappropriate is strictly boolean (not nullable)
+        if (typeof parsedResponse.flagsPreviousMessageAsInappropriate !== 'boolean') {
+            reqLogger.error('Validation Error: flagsPreviousMessageAsInappropriate is missing or not a boolean.', { response: parsedResponse });
+            throw new Error('LLM response missing or invalid required field: flagsPreviousMessageAsInappropriate');
+        }
+
+        // Action-specific validation
+        if (parsedResponse.actionType) {
+          switch (parsedResponse.actionType) {
+            case 'showQuiz':
+              if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string' || !parsedResponse.quizId || typeof parsedResponse.quizId !== 'string') {
+                reqLogger.error(`Validation Error: Action 'showQuiz' requires non-empty string 'lessonId' and 'quizId'.`, { response: parsedResponse });
+                throw new Error(`LLM response action 'showQuiz' missing or invalid 'lessonId' or 'quizId'.`);
+              }
+              break;
+            case 'showLessonOverview':
+              // Add validation for other actions like completeLesson if needed based on schema/plan
+            // case 'completeLesson': // Example if needed
+              if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string') {
+                reqLogger.error(`Validation Error: Action '${parsedResponse.actionType}' requires a non-empty string 'lessonId'.`, { response: parsedResponse });
+                throw new Error(`LLM response action '${parsedResponse.actionType}' missing or invalid 'lessonId'.`);
+              }
+              break;
+            case 'completeLesson':
+              if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string') {
+                reqLogger.error(`Validation Error: Action 'completeLesson' requires a non-empty string 'lessonId'.`, { response: parsedResponse });
+                throw new Error(`LLM response action 'completeLesson' missing or invalid 'lessonId'.`);
+              }
+              break;
+            // Add cases for other actions requiring specific fields (e.g., clarifyQuestion might not need IDs)
+            case 'clarifyQuestion':
+                // No specific IDs needed for this action type currently
+                break;
+            default:
+                // Optional: Log if an unknown actionType is received
+                reqLogger.warn(`Received unknown actionType: ${parsedResponse.actionType}`, { response: parsedResponse });
+          }
+        }
+        reqLogger.debug(`Validation passed for response (v_new). Action Type: ${parsedResponse.actionType || 'null'}`);
+        // --- End New Validation Logic ---
 
     } catch (parseError) {
-        reqLogger.error("Error parsing Gemini JSON response", parseError instanceof Error ? parseError : { error: parseError });
-        reqLogger.error("Raw response text that failed parsing:", { rawResponse: responseText }); // Log raw text for debugging
-        // Return a specific error response to the client
-        reqLogger.endRequest(500, { error: "Failed to parse LLM response" });
-        return NextResponse.json({ error: "Failed to parse LLM response as JSON." }, { status: 500 });
+        // Wrap error for logging context if it's an Error instance
+        const errorContext = parseError instanceof Error ? { error: { message: parseError.message, name: parseError.name } } : { error: parseError };
+        reqLogger.warn("Initial JSON parse/validation failed (v_new format)", errorContext);
+        reqLogger.error("Raw response text that failed initial parsing:", { rawResponse: responseText });
+
+        // --- Backwards Compatibility: Attempt parsing legacy format ---
+        try {
+            reqLogger.info("Attempting fallback parse with legacy (v_legacy) format.");
+            const legacyParsedResponse = JSON.parse(responseText.trim()); // Re-parse assuming old structure might exist
+
+            // Check if it looks like the legacy structure
+            if (legacyParsedResponse && typeof legacyParsedResponse.action === 'object') {
+                 // Add response_format to the context object
+                reqLogger.info("Successfully parsed as potential legacy format. Transforming to v_new.", { response_format: 'v_legacy' });
+
+                // Transform legacy to new flat structure
+                parsedResponse = {
+                    responseText: legacyParsedResponse.responseText ?? '', // Ensure responseText exists
+                    actionType: legacyParsedResponse.action?.type ?? null,
+                    lessonId: legacyParsedResponse.action?.payload?.lessonId ?? null,
+                    quizId: legacyParsedResponse.action?.payload?.quizId ?? null,
+                    flagsPreviousMessageAsInappropriate: legacyParsedResponse.flagsPreviousMessageAsInappropriate ?? false, // Default to false if missing
+                    reasoning: legacyParsedResponse.reasoning ?? null
+                };
+
+                // --- Re-run Validation Logic on TRANSFORMED legacy response ---
+                reqLogger.info("Re-validating transformed legacy response.");
+                if (parsedResponse.responseText === undefined || parsedResponse.responseText === null) {
+                    throw new Error('Transformed legacy response missing required field: responseText');
+                }
+                if (typeof parsedResponse.flagsPreviousMessageAsInappropriate !== 'boolean') {
+                     throw new Error('Transformed legacy response missing or invalid required field: flagsPreviousMessageAsInappropriate');
+                }
+                if (parsedResponse.actionType) {
+                  switch (parsedResponse.actionType) {
+                    case 'showQuiz':
+                      if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string' || !parsedResponse.quizId || typeof parsedResponse.quizId !== 'string') {
+                        throw new Error(`Transformed legacy action 'showQuiz' missing or invalid 'lessonId' or 'quizId'.`);
+                      }
+                      break;
+                    case 'showLessonOverview':
+                    case 'completeLesson':
+                      if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string') {
+                        throw new Error(`Transformed legacy action '${parsedResponse.actionType}' missing or invalid 'lessonId'.`);
+                      }
+                      break;
+                    case 'clarifyQuestion':
+                        break; // No specific IDs needed
+                    default:
+                        reqLogger.warn(`Received unknown actionType in transformed legacy response: ${parsedResponse.actionType}`);
+                  }
+                }
+                reqLogger.debug(`Validation passed for transformed legacy response (v_legacy). Action Type: ${parsedResponse.actionType || 'null'}`);
+                // If validation passes, proceed using the transformed 'parsedResponse'
+                 // Extract token usage if available (might not be accurate for legacy parse path)
+                const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
+                reqLogger.logLlmResult(parsedResponse, tokenUsage); // Log transformed result
+
+            } else {
+                 // Parsed but doesn't look like legacy format either
+                 reqLogger.error("Parsed fallback JSON but it doesn't match expected legacy structure.", { parsed: legacyParsedResponse });
+                 throw new Error("Response format is invalid (neither v_new nor recognized v_legacy).");
+            }
+
+        } catch (legacyParseError) {
+            reqLogger.error("Fallback parsing (v_legacy) also failed.", legacyParseError instanceof Error ? legacyParseError : { error: legacyParseError });
+            // If fallback also fails, return the original error response
+            reqLogger.endRequest(500, { error: "Failed to parse LLM response (both v_new and v_legacy attempts failed)" });
+            return NextResponse.json({ error: "Failed to parse LLM response as valid JSON (tried current and legacy formats)." }, { status: 500 });
+        }
+        // --- End Backwards Compatibility ---
     }
 
     // Return the parsed JSON object
@@ -327,7 +415,7 @@ export async function POST(request: Request) {
     // Get the latest history from the chat session object (implementation might vary based on SDK version)
     // For now, we'll just return the parsed response. Client-side needs adjustment.
     // TODO: Add updated history to the response payload for the client.
-    reqLogger.endRequest(200, { actionType: parsedResponse.action?.type });
+    reqLogger.endRequest(200, { actionType: parsedResponse.actionType }); // Use the new flat field
     return NextResponse.json(parsedResponse);
 
   } catch (error) {

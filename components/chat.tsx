@@ -8,6 +8,7 @@ import type {
     LessonQuiz,
     LlmContext,
     ChatAction,
+    ActionType,
     LessonDatabase,
     StudentProfile
 } from "@/types"
@@ -21,12 +22,15 @@ interface ChatProps {
 }
 
 // Define a type for the expected API response structure
+// Define a type for the expected API response structure (flattened)
 interface LlmApiResponse {
     responseText: string;
-    action?: ChatAction | null;
-    contextUpdates?: Partial<LlmContext> | null; // Use Partial for flexibility
+    actionType?: string | null; // Flattened action type
+    lessonId?: string | null;   // Flattened lesson ID
+    quizId?: string | null;     // Flattened quiz ID
+    contextUpdates?: Partial<LlmContext> | null;
     flagsPreviousMessageAsInappropriate?: boolean | null;
-    error?: string; // Include potential error field
+    error?: string;
 }
 
 
@@ -138,8 +142,11 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     setMessages((prev) => [...prev, typingMessage]);
 
     // --- Define variables for API results ---
-    let responseText: string = "Sorry, something went wrong. Please try again."; // Default error message
-    let action: ChatAction | null = null;
+    let responseText: string = "Sorry, something went wrong. Please try again.";
+    // Variables for the flattened action fields from the API response
+    let actionType: string | null = null;
+    let lessonId: string | null = null;
+    let quizId: string | null = null;
     let contextUpdates: Partial<LlmContext> | null = null;
     let flagsPreviousMessageAsInappropriate: boolean | null = null;
 
@@ -187,7 +194,10 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
             responseText = `Error: ${apiResponse.error || res.statusText || "Unknown API error"}`;
         } else {
             responseText = apiResponse.responseText || "Received empty response from assistant.";
-            action = apiResponse.action || null;
+            // Extract flattened action fields
+            actionType = apiResponse.actionType || null;
+            lessonId = apiResponse.lessonId || null;
+            quizId = apiResponse.quizId || null;
             contextUpdates = apiResponse.contextUpdates || null;
             flagsPreviousMessageAsInappropriate = apiResponse.flagsPreviousMessageAsInappropriate || null;
 
@@ -258,24 +268,50 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     // For now, storing the core parts.
     setLlmContext(prev => ({
         ...prev,
-        recentInteractions: [...prev.recentInteractions, { ai_response: { responseText, action, contextUpdates, flagsPreviousMessageAsInappropriate } }]
+        // Store flattened action fields in history
+        recentInteractions: [...prev.recentInteractions, { ai_response: { responseText, actionType, lessonId, quizId, contextUpdates, flagsPreviousMessageAsInappropriate } }]
     }));
 
-     // Handle actions that modify local context *after* API call & context updates
-     // These ensure the local state matches the intended state after an action
-     if (action?.type === 'showLessonOverview' && action.payload?.lessonId) {
-         setCurrentLesson(action.payload.lessonId);
-     } else if (action?.type === 'showQuiz' && action.payload?.lessonId && action.payload?.quizId) {
-         setCurrentQuiz(action.payload.lessonId, action.payload.quizId);
-     } else if (action?.type === 'completeLesson') {
-         // Clear lesson/quiz locally after completion action is confirmed by API
-         setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
+     // --- Handle Actions & Logging (Using Flattened Fields) ---
+     if (actionType) { // Check if an action was specified
+         logger.info(`Received action from API`, { component: 'Chat', actionType, lessonId, quizId });
+ 
+         // Handle actions that modify local context *after* API call & context updates
+         // These ensure the local state matches the intended state after an action
+         if (actionType === 'showLessonOverview') {
+             if (lessonId) {
+                 logger.info(`Executing 'showLessonOverview' action`, { component: 'Chat', lessonId });
+                 setCurrentLesson(lessonId); // setCurrentLesson already logs if lessonId is invalid
+             } else {
+                 logger.warn(`'showLessonOverview' action received without lessonId`, { component: 'Chat', actionType });
+             }
+         } else if (actionType === 'showQuiz') {
+             if (lessonId && quizId) {
+                 logger.info(`Executing 'showQuiz' action`, { component: 'Chat', lessonId, quizId });
+                 setCurrentQuiz(lessonId, quizId);
+             } else {
+                 logger.warn(`'showQuiz' action received with missing lessonId or quizId`, { component: 'Chat', actionType, lessonId, quizId });
+             }
+         } else if (actionType === 'completeLesson') {
+             logger.info(`Executing 'completeLesson' action`, { component: 'Chat', currentLessonId: llmContext.currentLesson?.id });
+             // Clear lesson/quiz locally after completion action is confirmed by API
+             setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
+         } else {
+              // Handle other action types like returnToLessonOverview, showPreviousQuiz, showNextQuiz if needed
+              logger.info(`Executing other action type`, { component: 'Chat', actionType, lessonId, quizId });
+         }
+ 
+         // Trigger external action handler if needed (e.g., for UI changes in parent)
+         // Construct the ChatAction object according to the updated type definition
+         const actionPayload: ChatAction = {
+             actionType: actionType as ActionType, // Cast as ActionType from types/index.ts
+             lessonId: lessonId,
+             quizId: quizId
+         };
+         logger.info(`Calling onAction prop for UI update`, { component: 'Chat', action: actionPayload });
+         onAction(actionPayload); // Call the prop function passed from the parent
      }
-
-    // Trigger external action handler if needed (e.g., for UI changes in parent)
-    if (action) {
-      onAction(action); // Call the prop function passed from the parent
-    }
+     // --- End Handle Actions & Logging ---
 
     // Always set processing to false at the very end
     setIsProcessing(false);

@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson2` and asks to return to the previous lesson (`lesson1`).
 
-**Expected LLM Action:** `showLessonOverview` with `payload: { lessonId: "lesson1" }`.
+**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson1'`.
 
 ```json
 {
@@ -75,11 +75,9 @@
 ```json
 {
   "responseText": "Okay, going back to the previous lesson: 'Introduction to Numbers'.",
-  "action": {
-    "type": "showLessonOverview",
-    "payload": {
-      "lessonId": "lesson1"
-    }
-  }
+  "actionType": "showLessonOverview",
+  "lessonId": "lesson1",
+  "quizId": null,
+  "flagsPreviousMessageAsInappropriate": false
 }
 ```

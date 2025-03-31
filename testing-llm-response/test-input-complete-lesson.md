@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson1` and explicitly asks to complete the lesson.
 
-**Expected LLM Action:** `completeLesson` with `payload: { lessonId: "lesson1" }`.
+**Expected LLM Action:** `actionType: 'completeLesson'`, `lessonId: 'lesson1'`.
 
 ```json
 {
@@ -76,10 +76,8 @@
 ```json
 {
   "responseText": "Great job completing the 'Introduction to Numbers' lesson! What would you like to do next? You could try the next lesson.",
-  "action": {
-    "type": "completeLesson",
-    "payload": {
-      "lessonId": "lesson1"
-    }
-  }
+  "actionType": "completeLesson",
+  "lessonId": "lesson1",
+  "quizId": null,
+  "flagsPreviousMessageAsInappropriate": false
 }

@@ -2,7 +2,7 @@
 
 **Scenario:** User is in `lesson1` and currently viewing the first quiz (`quizA`). They ask to go to the previous activity.
 
-**Expected LLM Action:** `showLessonOverview` with `payload: { lessonId: "lesson1" }` (fallback to lesson overview).
+**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson1'` (fallback to lesson overview).
 
 ```json
 {
@@ -80,11 +80,9 @@
 ```json
 {
   "responseText": "You're already on the first activity ('Number Recognition'). Going back to the lesson overview for 'Introduction to Numbers'.",
-  "action": {
-    "type": "showLessonOverview",
-    "payload": {
-      "lessonId": "lesson1"
-    }
-  }
+  "actionType": "showLessonOverview",
+  "lessonId": "lesson1",
+  "quizId": null,
+  "flagsPreviousMessageAsInappropriate": false
 }
 ```

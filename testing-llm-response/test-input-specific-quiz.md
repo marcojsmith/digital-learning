@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson1` (perhaps viewing the overview or after completing `quizA`) and asks to navigate directly to a specific quiz (`quizB`, titled "Counting Practice").
 
-**Expected LLM Action:** `showQuiz` with `payload: { lessonId: "lesson1", quizId: "quizB" }`.
+**Expected LLM Action:** `actionType: 'showQuiz'`, `lessonId: 'lesson1'`, `quizId: 'quizB'`.
 
 ```json
 {
@@ -75,12 +75,9 @@
 ```json
 {
   "responseText": "Okay, here is the 'Counting Practice' activity.",
-  "action": {
-    "type": "showQuiz",
-    "payload": {
-      "lessonId": "lesson1",
-      "quizId": "quizB"
-    }
-  }
+  "actionType": "showQuiz",
+  "lessonId": "lesson1",
+  "quizId": "quizB",
+  "flagsPreviousMessageAsInappropriate": false
 }
 ```

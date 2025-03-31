@@ -2,7 +2,7 @@
 
 **Scenario:** No lesson is currently active. User asks to start a specific lesson by ID or name (e.g., "lesson2" / "Basic Addition").
 
-**Expected LLM Action:** `showLessonOverview` with `payload: { lessonId: "lesson2" }`.
+**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson2'`.
 
 ```json
 {
@@ -37,11 +37,9 @@
 ```json
 {
   "responseText": "Okay, let's start the 'Basic Addition' lesson. Here's the overview.",
-  "action": {
-    "type": "showLessonOverview",
-    "payload": {
-      "lessonId": "lesson2"
-    }
-  }
+  "actionType": "showLessonOverview",
+  "lessonId": "lesson2",
+  "quizId": null,
+  "flagsPreviousMessageAsInappropriate": false
 }
 ```

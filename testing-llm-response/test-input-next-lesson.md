@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson1` and asks to proceed to the next lesson (`lesson2`).
 
-**Expected LLM Action:** `showLessonOverview` with `payload: { lessonId: "lesson2" }`.
+**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson2'`.
 
 ```json
 {
@@ -74,10 +74,8 @@
 ```json
 {
   "responseText": "Okay, moving on to the next lesson: 'Basic Addition'.",
-  "action": {
-    "type": "showLessonOverview",
-    "payload": {
-      "lessonId": "lesson2"
-    }
-  }
+  "actionType": "showLessonOverview",
+  "lessonId": "lesson2",
+  "quizId": null,
+  "flagsPreviousMessageAsInappropriate": false
 }

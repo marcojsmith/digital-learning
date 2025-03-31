@@ -67,12 +67,22 @@ export interface ChatMessage {
 }
 
 // Added ChatAction Type
+// Define the possible action types based on the new flattened structure
+export type ActionType =
+  | "showLessonOverview"
+  | "showQuiz"
+  | "completeLesson"
+  | "returnToLessonOverview"
+  | "showPreviousQuiz"
+  | "showNextQuiz"
+  | null; // Added null based on LLMResponse definition
+
+// Updated ChatAction interface reflecting the flattened structure
 export interface ChatAction {
-    type: "showLessonOverview" | "showQuiz" | "completeLesson" | "returnToLessonOverview" | "showPreviousQuiz" | "showNextQuiz";
-    payload: {
-        lessonId?: string;
-        quizId?: string;
-    };
+  actionType: ActionType;
+  lessonId?: string | null; // Corresponds to old payload.lessonId
+  quizId?: string | null;   // Corresponds to old payload.quizId
+  // Note: flagsPreviousMessageAsInappropriate is handled separately from the action intent.
 }
 
 // Added StudentProfile Type (assuming it might be needed globally)

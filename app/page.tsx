@@ -67,7 +67,8 @@ export default function Home() {
 
   const handleLessonSelect = (lessonId: string) => {
     if (lessonsData.some(l => l.id === lessonId)) {
-        handleChatAction({ type: 'showLessonOverview', payload: { lessonId } });
+        // Pass the action using the new flattened structure
+        handleChatAction({ actionType: 'showLessonOverview', lessonId: lessonId, quizId: null });
         window.scrollTo(0, 0)
         if (isMobile && sidebarOpen) {
             toggleSidebar();
@@ -84,53 +85,51 @@ export default function Home() {
 
   const handleChatAction = (action: ChatAction) => {
     console.log("Chat Action Received in page.tsx:", action);
-    switch (action.type) {
+    // Use actionType, lessonId, quizId from the flattened structure
+    switch (action.actionType) {
         case "showLessonOverview":
-            // Add check for payload existence
-            if (action.payload?.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
-                setCurrentLessonId(action.payload.lessonId);
+            if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
+                setCurrentLessonId(action.lessonId);
                 setCurrentQuizIdToShow(null);
             } else {
-                 console.warn("showLessonOverview action received without valid payload.lessonId");
+                 console.warn("showLessonOverview action received without valid lessonId", { action });
             }
             break;
         case "showQuiz":
-            // Add check for payload and nested properties
-            if (action.payload?.lessonId && action.payload?.quizId) {
-                const targetLesson = lessonsData.find(l => l.id === action.payload.lessonId);
-                if (targetLesson && targetLesson.quizzes.some(q => q.id === action.payload.quizId)) {
-                    if (currentLessonId !== action.payload.lessonId) {
-                        setCurrentLessonId(action.payload.lessonId);
+            if (action.lessonId && action.quizId) {
+                const targetLesson = lessonsData.find(l => l.id === action.lessonId);
+                if (targetLesson && targetLesson.quizzes.some(q => q.id === action.quizId)) {
+                    if (currentLessonId !== action.lessonId) {
+                        setCurrentLessonId(action.lessonId); // Switch lesson if needed
                     }
-                    setCurrentQuizIdToShow(action.payload.quizId);
+                    setCurrentQuizIdToShow(action.quizId);
                 } else {
-                    console.warn(`Attempted to show non-existent quiz: ${action.payload.lessonId}/${action.payload.quizId}`);
+                    console.warn(`Attempted to show non-existent quiz: ${action.lessonId}/${action.quizId}`, { action });
                 }
             } else {
-                 console.warn("showQuiz action received without valid payload.lessonId or payload.quizId");
+                 console.warn("showQuiz action received without valid lessonId or quizId", { action });
             }
             break;
         case "completeLesson":
-             // Add check for payload existence
-             if (action.payload?.lessonId) {
-                handleLessonComplete(action.payload.lessonId);
+             if (action.lessonId) {
+                handleLessonComplete(action.lessonId);
              } else {
-                  console.warn("completeLesson action received without valid payload.lessonId");
+                  console.warn("completeLesson action received without valid lessonId", { action });
              }
             break;
         case "returnToLessonOverview":
-            // Add check for payload existence
-            if (action.payload?.lessonId && lessonsData.some(l => l.id === action.payload.lessonId)) {
-                 if (currentLessonId !== action.payload.lessonId) {
-                    setCurrentLessonId(action.payload.lessonId);
+            if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
+                 if (currentLessonId !== action.lessonId) {
+                    setCurrentLessonId(action.lessonId); // Switch lesson if needed
                  }
-                 setCurrentQuizIdToShow(null);
+                 setCurrentQuizIdToShow(null); // Always hide quiz when returning to overview
             } else {
-                 console.warn("returnToLessonOverview action received without valid payload.lessonId");
+                 console.warn("returnToLessonOverview action received without valid lessonId", { action });
             }
             break;
+        // Add cases for showPreviousQuiz, showNextQuiz if needed by UI logic later
         default:
-            console.log("Unhandled chat action type:", action.type);
+            console.log("Unhandled chat action type:", action.actionType, { action });
     }
   };
 
