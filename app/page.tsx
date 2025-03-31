@@ -19,6 +19,8 @@ export default function Home() {
   const [lessonsData, setLessonsData] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // State for simulated message
+  const [simulatedMessageToSend, setSimulatedMessageToSend] = useState<{ text: string; id: number } | null>(null);
 
   const isMobile = useMobile()
 
@@ -120,24 +122,20 @@ export default function Home() {
     }
   };
 
-  const handleNavigateRequest = (direction: 'prev' | 'next') => {
-    if (!currentLessonId) return;
-    const currentLesson = lessonsData.find((lesson) => lesson.id === currentLessonId);
-    if (!currentLesson) return;
-    const targetLessonId = direction === 'prev' ? currentLesson.prevLesson : currentLesson.nextLesson;
-    if (targetLessonId && lessonsData.some(l => l.id === targetLessonId)) {
-        handleChatAction({ type: 'showLessonOverview', payload: { lessonId: targetLessonId } });
-        window.scrollTo(0, 0);
-    } else {
-        console.log(`No ${direction} lesson found from ${currentLessonId}`);
-    }
+  // Removed handleNavigateRequest and handleShowQuiz
+
+  // New handler to set the simulated message state
+  const handleSimulateUserMessage = (message: string) => {
+      console.log(`Queueing simulated message: "${message}"`);
+      setSimulatedMessageToSend({ text: message, id: Date.now() }); // Use timestamp as unique ID
   };
 
-  // New handler to trigger quiz display via chat action
-  const handleShowQuiz = (lessonId: string, quizId: string) => {
-      handleChatAction({ type: 'showQuiz', payload: { lessonId, quizId } });
-      window.scrollTo(0, 0); // Scroll to top when showing quiz
+  // New handler to clear the simulated message state after processing
+  const handleSimulatedMessageProcessed = () => {
+      console.log("Simulated message processed, clearing state.");
+      setSimulatedMessageToSend(null);
   };
+
 
   const currentLesson = currentLessonId ? lessonsData.find((lesson) => lesson.id === currentLessonId) : null;
 
@@ -163,9 +161,9 @@ export default function Home() {
                 lesson={currentLesson}
                 allLessons={lessonsData}
                 currentQuizIdToShow={currentQuizIdToShow}
-                onNavigateRequest={handleNavigateRequest}
-                onShowQuiz={handleShowQuiz} // Pass down the new handler
+                onSimulateUserMessage={handleSimulateUserMessage} // Pass new handler
                 onLessonComplete={handleLessonComplete}
+                // Removed onNavigateRequest and onShowQuiz
             />
         );
     }
@@ -207,7 +205,12 @@ export default function Home() {
         </main>
 
         <div className="fixed right-0 top-[74px] bottom-0 w-[360px] z-40 hidden md:block">
-             <Chat onAction={handleChatAction} />
+             {/* Pass new props to Chat */}
+             <Chat
+                onAction={handleChatAction}
+                simulatedMessage={simulatedMessageToSend}
+                onSimulatedMessageProcessed={handleSimulatedMessageProcessed}
+             />
         </div>
 
       </div>

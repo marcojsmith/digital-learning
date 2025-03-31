@@ -16,9 +16,12 @@ import { Send, Mic } from "lucide-react"
 
 interface ChatProps {
   onAction: (action: ChatAction) => void;
+  // New props for simulating messages
+  simulatedMessage: { text: string; id: number } | null;
+  onSimulatedMessageProcessed: () => void;
 }
 
-export default function Chat({ onAction }: ChatProps) {
+export default function Chat({ onAction, simulatedMessage, onSimulatedMessageProcessed }: ChatProps) { // Added new props
   const [messages, setMessages] = useState<ChatMessage[]>([
     { text: "Hello! I'm your math tutor. I can help you learn about numbers, operations, and more. What would you like to learn today?", type: "ai" },
   ])
@@ -33,8 +36,10 @@ export default function Chat({ onAction }: ChatProps) {
     conceptsIntroduced: new Set(), conceptsMastered: new Set(), conceptsStruggling: new Set(),
   });
 
+  // Fetch initial data
   useEffect(() => {
     const fetchData = async () => {
+        setIsProcessing(true); // Indicate loading
         try {
             const [profile, database] = await Promise.all([
                 getInitialStudentProfile(),
@@ -44,6 +49,9 @@ export default function Chat({ onAction }: ChatProps) {
             setChatDb(database);
         } catch (error) {
             console.error("Error fetching initial chat data:", error);
+            setMessages(prev => [...prev, { text: "Error loading chat data.", type: 'ai' }]);
+        } finally {
+            setIsProcessing(false); // Finish loading
         }
     };
     fetchData();
@@ -55,16 +63,15 @@ export default function Chat({ onAction }: ChatProps) {
     const lessonData = chatDb[lessonId];
     if (!lessonData) {
         console.warn(`Lesson data not found in chatDb for ID: ${lessonId}`);
-        return; // Don't update context if lesson data is missing
+        return;
     }
     setLlmContext((prev: LlmContext) => {
         const newIntroduced = new Set(prev.conceptsIntroduced);
-        // Ensure concepts array exists before iterating
         lessonData.concepts?.forEach((concept: string) => newIntroduced.add(concept));
         return {
             ...prev,
             currentLesson: { id: lessonId, data: lessonData, startTime: new Date(), progressPercentage: 0 },
-            currentQuiz: null, // Reset quiz when lesson changes
+            currentQuiz: null,
             conceptsIntroduced: newIntroduced
         };
     });
@@ -73,11 +80,10 @@ export default function Chat({ onAction }: ChatProps) {
   const setCurrentQuiz = useCallback((lessonId: string, quizId: string) => {
     if (!chatDb) return;
     const lesson = chatDb[lessonId];
-    // Ensure quizzes array exists before searching
     const quizData = lesson?.quizzes?.find((q: LessonQuiz) => q.id === quizId);
     if (!lesson || !quizData) {
         console.warn(`Quiz data not found in chatDb for lesson ${lessonId}, quiz ${quizId}`);
-        return; // Don't update context if quiz data is missing
+        return;
     }
     setLlmContext((prev: LlmContext) => ({
         ...prev,
@@ -85,6 +91,7 @@ export default function Chat({ onAction }: ChatProps) {
     }));
   }, [chatDb]);
 
+  // Scroll effect
   useEffect(() => {
     scrollToBottom()
   }, [messages])
@@ -94,160 +101,188 @@ export default function Chat({ onAction }: ChatProps) {
   }
 
   // ========================================================================
-  // Refactored handleSubmit for Dynamic Lesson/Quiz Flow
+  // Core Message Processing Logic (Extracted)
   // ========================================================================
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const userMessageText = inputValue.trim()
-    if (!userMessageText || isProcessing || !chatDb) return
+  const processSubmission = useCallback(async (messageText: string) => {
+    if (!messageText || isProcessing || !chatDb) return;
 
-    const userMessage: ChatMessage = { text: userMessageText, type: "user" }
-    setMessages((prev) => [...prev, userMessage])
-    setInputValue("")
     setIsProcessing(true);
+    const userMessage: ChatMessage = { text: messageText, type: "user" };
+    setMessages((prev) => [...prev, userMessage]);
 
-    const typingMessage: ChatMessage = { text: "Assistant is typing...", type: "typing" }
-    setMessages((prev) => [...prev, typingMessage])
+    const typingMessage: ChatMessage = { text: "Assistant is typing...", type: "typing" };
+    setMessages((prev) => [...prev, typingMessage]);
 
     // Simulate processing delay
-    setTimeout(() => {
-      setMessages((prev) => prev.filter((msg) => msg.type !== "typing"))
+    await new Promise(resolve => setTimeout(resolve, 1500));
 
-      let responseText: string = "Sorry, I didn't understand that. Can you rephrase?"; // Default response
-      let action: ChatAction | null = null;
-      const lowerMsg = userMessageText.toLowerCase();
+    setMessages((prev) => prev.filter((msg) => msg.type !== "typing"));
 
-      // Get current state from context
-      const currentLessonState = llmContext.currentLesson;
-      const currentQuizState = llmContext.currentQuiz;
-      const currentLessonData = currentLessonState?.data;
+    let responseText: string = "Sorry, I didn't understand that. Can you rephrase?";
+    let action: ChatAction | null = null;
+    const lowerMsg = messageText.toLowerCase();
 
-      // --- Dynamic Simulation Logic ---
+    const currentLessonState = llmContext.currentLesson;
+    const currentQuizState = llmContext.currentQuiz;
+    const currentLessonData = currentLessonState?.data;
 
-      // General Commands
-      if (lowerMsg.includes('help')) {
-          responseText = "I can help you learn! Try commands like 'start lesson', 'show first quiz', 'next quiz', 'previous quiz', 'next lesson', 'previous lesson', or 'back to overview'.";
-      } else if (lowerMsg.includes('hello') || lowerMsg.includes('hi')) {
-          responseText = "Hello there! Ready to learn? Ask me anything about the lessons or say 'start lesson'.";
-      }
+    // --- Dynamic Simulation Logic ---
+    if (lowerMsg.includes('help')) {
+        responseText = "I can help you learn! Try commands like 'start lesson', 'show first quiz', 'next activity', 'previous activity', 'next lesson', 'previous lesson', or 'back to overview'.";
+    } else if (lowerMsg.includes('hello') || lowerMsg.includes('hi')) {
+        responseText = "Hello there! Ready to learn? Ask me anything about the lessons or say 'start lesson'.";
+    }
+    // Lesson Start/Navigation
+    else if (lowerMsg.includes('start') || lowerMsg.includes('begin') || lowerMsg.includes('learn')) {
+        const firstLessonId = Object.keys(chatDb)[0] || "lesson1";
+        const targetLesson = chatDb[firstLessonId];
+        if (targetLesson) {
+            responseText = `Great! Let's start with '${targetLesson.title}'. I'll display the lesson overview.`;
+            action = { type: "showLessonOverview", payload: { lessonId: firstLessonId } };
+            setCurrentLesson(firstLessonId);
+        } else {
+            responseText = "Sorry, I couldn't find the first lesson data.";
+        }
+    } else if (lowerMsg.includes('next lesson')) {
+        if (currentLessonData?.nextLesson && chatDb[currentLessonData.nextLesson]) {
+            const nextLessonId = currentLessonData.nextLesson;
+            const nextLessonTitle = chatDb[nextLessonId]?.title || 'the next lesson';
+            responseText = `Okay, moving to the next lesson: '${nextLessonTitle}'.`;
+            action = { type: "showLessonOverview", payload: { lessonId: nextLessonId } };
+            setCurrentLesson(nextLessonId);
+        } else if (currentLessonState) {
+            responseText = "You've reached the end of the available lessons!";
+        } else {
+            responseText = "You need to start a lesson first before moving to the next one.";
+        }
+    } else if (lowerMsg.includes('previous lesson')) {
+        if (currentLessonData?.prevLesson && chatDb[currentLessonData.prevLesson]) {
+            const prevLessonId = currentLessonData.prevLesson;
+            const prevLessonTitle = chatDb[prevLessonId]?.title || 'the previous lesson';
+            responseText = `Okay, going back to the previous lesson: '${prevLessonTitle}'.`;
+            action = { type: "showLessonOverview", payload: { lessonId: prevLessonId } };
+            setCurrentLesson(prevLessonId);
+        } else if (currentLessonState) {
+            responseText = "You are already on the first lesson.";
+        } else {
+            responseText = "You need to start a lesson first before going to the previous one.";
+        }
+    }
+    // Quiz Navigation/Interaction (Requires a lesson to be active)
+    else if (currentLessonState) {
+        const lessonId = currentLessonState.id;
+        const quizzes = currentLessonData?.quizzes || [];
+        const currentQuizId = currentQuizState?.id;
 
-      // Lesson Start/Navigation
-      else if (lowerMsg.includes('start') || lowerMsg.includes('begin') || lowerMsg.includes('learn')) {
-          const firstLessonId = Object.keys(chatDb)[0] || "lesson1"; // Default to lesson1 if DB is empty/structured differently
-          const targetLesson = chatDb[firstLessonId];
-          if (targetLesson) {
-              responseText = `Great! Let's start with '${targetLesson.title}'. I'll display the lesson overview.`;
-              action = { type: "showLessonOverview", payload: { lessonId: firstLessonId } };
-              setCurrentLesson(firstLessonId);
-          } else {
-              responseText = "Sorry, I couldn't find the first lesson data.";
-          }
-      } else if (lowerMsg.includes('next lesson')) {
-          if (currentLessonData?.nextLesson && chatDb[currentLessonData.nextLesson]) {
-              const nextLessonId = currentLessonData.nextLesson;
-              const nextLessonTitle = chatDb[nextLessonId]?.title || 'the next lesson';
-              responseText = `Okay, moving to the next lesson: '${nextLessonTitle}'.`;
-              action = { type: "showLessonOverview", payload: { lessonId: nextLessonId } };
-              setCurrentLesson(nextLessonId);
-          } else if (currentLessonState) {
-              responseText = "You've reached the end of the available lessons!";
-          } else {
-              responseText = "You need to start a lesson first before moving to the next one.";
-          }
-      } else if (lowerMsg.includes('previous lesson')) {
-          if (currentLessonData?.prevLesson && chatDb[currentLessonData.prevLesson]) {
-              const prevLessonId = currentLessonData.prevLesson;
-              const prevLessonTitle = chatDb[prevLessonId]?.title || 'the previous lesson';
-              responseText = `Okay, going back to the previous lesson: '${prevLessonTitle}'.`;
-              action = { type: "showLessonOverview", payload: { lessonId: prevLessonId } };
-              setCurrentLesson(prevLessonId);
-          } else if (currentLessonState) {
-              responseText = "You are already on the first lesson.";
-          } else {
-              responseText = "You need to start a lesson first before going to the previous one.";
-          }
-      }
+        if (lowerMsg.includes('first quiz') || lowerMsg.includes('start quiz')) {
+            if (quizzes.length > 0) {
+                const firstQuizId = quizzes[0].id;
+                responseText = `Okay, here's the first activity for this lesson: ${quizzes[0].title}`;
+                action = { type: "showQuiz", payload: { lessonId, quizId: firstQuizId } };
+                setCurrentQuiz(lessonId, firstQuizId);
+            } else {
+                responseText = "This lesson doesn't seem to have any quizzes.";
+            }
+        } else if (lowerMsg.includes('next activity') || lowerMsg.includes('next quiz')) { // Handle "next activity" from button
+            if (!currentQuizId) { // If no quiz active, treat as "first quiz"
+                 if (quizzes.length > 0) {
+                    const firstQuizId = quizzes[0].id;
+                    responseText = `Okay, starting with the first activity: ${quizzes[0].title}`;
+                    action = { type: "showQuiz", payload: { lessonId, quizId: firstQuizId } };
+                    setCurrentQuiz(lessonId, firstQuizId);
+                } else {
+                    responseText = "This lesson doesn't seem to have any quizzes to start.";
+                }
+            } else if (quizzes.length > 0) { // If quiz active, find next
+                const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
+                if (currentQuizIndex < quizzes.length - 1) {
+                    const nextQuiz = quizzes[currentQuizIndex + 1];
+                    responseText = `Okay, moving to the next activity: ${nextQuiz.title}`;
+                    action = { type: "showQuiz", payload: { lessonId, quizId: nextQuiz.id } };
+                    setCurrentQuiz(lessonId, nextQuiz.id);
+                } else {
+                    responseText = `You've finished the last activity for this lesson! Try 'next lesson'${currentLessonData?.nextLesson ? '' : ' (though there might not be one)'} or 'complete lesson'.`;
+                }
+            } else {
+                 responseText = "There are no quizzes in this lesson.";
+            }
+        } else if (lowerMsg.includes('previous activity') || lowerMsg.includes('previous quiz')) { // Handle "previous activity"
+            if (!currentQuizId) {
+                responseText = "You need to be doing an activity to go back. Try 'show first quiz'.";
+            } else if (quizzes.length > 0) {
+                const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
+                if (currentQuizIndex > 0) {
+                    const prevQuiz = quizzes[currentQuizIndex - 1];
+                    responseText = `Okay, going back to the previous activity: ${prevQuiz.title}`;
+                    action = { type: "showQuiz", payload: { lessonId, quizId: prevQuiz.id } };
+                    setCurrentQuiz(lessonId, prevQuiz.id);
+                } else {
+                    // If on the first quiz, go back to overview
+                    responseText = "You are on the first activity. Going back to the lesson overview.";
+                    action = { type: "showLessonOverview", payload: { lessonId } };
+                    setLlmContext((prev: LlmContext) => ({ ...prev, currentQuiz: null }));
+                }
+            } else {
+                 responseText = "There are no quizzes to go back to in this lesson.";
+            }
+        } else if (lowerMsg.includes('return to lesson overview') || lowerMsg.includes('back to overview')) {
+            responseText = `Returning to the overview for lesson: ${currentLessonData?.title}.`;
+            action = { type: "showLessonOverview", payload: { lessonId } };
+            setLlmContext((prev: LlmContext) => ({ ...prev, currentQuiz: null }));
+        } else if (lowerMsg.includes('complete lesson')) {
+            responseText = `Great job completing the lesson: ${currentLessonData?.title}! What would you like to do next? Try 'next lesson'.`;
+            action = { type: "completeLesson", payload: { lessonId } };
+            setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
+        }
+        else {
+             responseText = `I can help with '${currentLessonData?.title}'. You can ask for the 'first quiz', 'next activity', 'previous activity', 'next lesson', 'previous lesson', or 'back to overview'.`;
+        }
+    }
+    // Fallback if no lesson is active and command isn't general
+    else {
+        responseText = "Please start a lesson first. Try saying 'start lesson'.";
+    }
+    // --- End Simulation Logic ---
 
-      // Quiz Navigation/Interaction (Requires a lesson to be active)
-      else if (currentLessonState) {
-          const lessonId = currentLessonState.id;
-          const quizzes = currentLessonData?.quizzes || [];
-          const currentQuizId = currentQuizState?.id;
+    const aiMessage: ChatMessage = { text: responseText, type: "ai" };
+    setMessages((prev) => [...prev, aiMessage]);
 
-          if (lowerMsg.includes('first quiz') || lowerMsg.includes('start quiz')) {
-              if (quizzes.length > 0) {
-                  const firstQuizId = quizzes[0].id;
-                  responseText = `Okay, here's the first activity for this lesson: ${quizzes[0].title}`;
-                  action = { type: "showQuiz", payload: { lessonId, quizId: firstQuizId } };
-                  setCurrentQuiz(lessonId, firstQuizId);
-              } else {
-                  responseText = "This lesson doesn't seem to have any quizzes.";
-              }
-          } else if (lowerMsg.includes('next quiz')) {
-              if (!currentQuizId) {
-                  responseText = "You need to start a quiz first. Try 'show first quiz'.";
-              } else if (quizzes.length > 0) {
-                  const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
-                  if (currentQuizIndex < quizzes.length - 1) {
-                      const nextQuiz = quizzes[currentQuizIndex + 1];
-                      responseText = `Okay, moving to the next activity: ${nextQuiz.title}`;
-                      action = { type: "showQuiz", payload: { lessonId, quizId: nextQuiz.id } };
-                      setCurrentQuiz(lessonId, nextQuiz.id);
-                  } else {
-                      responseText = `You've finished the last activity for this lesson! Try 'next lesson'${currentLessonData?.nextLesson ? '' : ' (though there might not be one)'} or 'complete lesson'.`;
-                  }
-              } else {
-                   responseText = "There are no more quizzes in this lesson.";
-              }
-          } else if (lowerMsg.includes('previous quiz')) {
-              if (!currentQuizId) {
-                  responseText = "You need to be doing a quiz to go back. Try 'show first quiz'.";
-              } else if (quizzes.length > 0) {
-                  const currentQuizIndex = quizzes.findIndex(q => q.id === currentQuizId);
-                  if (currentQuizIndex > 0) {
-                      const prevQuiz = quizzes[currentQuizIndex - 1];
-                      responseText = `Okay, going back to the previous activity: ${prevQuiz.title}`;
-                      action = { type: "showQuiz", payload: { lessonId, quizId: prevQuiz.id } };
-                      setCurrentQuiz(lessonId, prevQuiz.id);
-                  } else {
-                      responseText = "You are already on the first activity for this lesson. Try 'back to overview'.";
-                  }
-              } else {
-                   responseText = "There are no quizzes to go back to in this lesson.";
-              }
-          } else if (lowerMsg.includes('return to lesson overview') || lowerMsg.includes('back to overview')) {
-              responseText = `Returning to the overview for lesson: ${currentLessonData?.title}.`;
-              action = { type: "showLessonOverview", payload: { lessonId } };
-              setLlmContext((prev: LlmContext) => ({ ...prev, currentQuiz: null })); // Only clear quiz context
-          } else if (lowerMsg.includes('complete lesson')) {
-              responseText = `Great job completing the lesson: ${currentLessonData?.title}! What would you like to do next? Try 'next lesson'.`;
-              action = { type: "completeLesson", payload: { lessonId } };
-              setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null })); // Clear lesson context
-          }
-          // Add more specific commands related to the current lesson/quiz content if needed
-          else {
-               responseText = `I can help with '${currentLessonData?.title}'. You can ask for the 'first quiz', 'next quiz', 'previous quiz', 'next lesson', 'previous lesson', or 'back to overview'.`;
-          }
-      }
-      // Fallback if no lesson is active and command isn't general
-      else {
-          responseText = "Please start a lesson first. Try saying 'start lesson'.";
-      }
+    if (action) {
+      onAction(action);
+    }
 
-      // --- End Simulation Logic ---
+    setIsProcessing(false);
 
-      const aiMessage: ChatMessage = { text: responseText, type: "ai" }
-      setMessages((prev) => [...prev, aiMessage])
+  }, [isProcessing, chatDb, llmContext, onAction, setCurrentLesson, setCurrentQuiz]); // Added dependencies
 
-      if (action) {
-        onAction(action);
-      }
-
-      setIsProcessing(false);
-
-    }, 1500) // Keep simulation delay
-  }
   // ========================================================================
+  // Handle Actual User Input Submission
+  // ========================================================================
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const messageText = inputValue.trim();
+    if (messageText) {
+        processSubmission(messageText); // Call the extracted logic
+        setInputValue(""); // Clear input after submission attempt
+    }
+  };
+
+  // ========================================================================
+  // Handle Simulated Message Submission from UI Actions
+  // ========================================================================
+  useEffect(() => {
+    if (simulatedMessage && !isProcessing) { // Only process if not already processing
+        console.log(`Simulating user message: "${simulatedMessage.text}"`);
+        processSubmission(simulatedMessage.text)
+            .then(() => {
+                onSimulatedMessageProcessed(); // Notify parent that processing is done
+            })
+            .catch((error) => {
+                console.error("Error processing simulated message:", error);
+                onSimulatedMessageProcessed(); // Still notify parent on error
+            });
+    }
+  }, [simulatedMessage, isProcessing, processSubmission, onSimulatedMessageProcessed]); // Added dependencies
 
   // --- JSX Structure (remains the same) ---
   return (
@@ -262,7 +297,7 @@ export default function Chat({ onAction }: ChatProps) {
                 <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-2 bg-light-gray">
                 {messages.map((message, index) => (
                     <div
-                    key={index}
+                    key={`${message.type}-${index}`} // Use a more robust key
                     className={`p-3 rounded-2xl max-w-[85%] shadow-sm ${
                         message.type === "user"
                         ? "bg-user-msg text-[#0c5460] self-end rounded-br-sm"
