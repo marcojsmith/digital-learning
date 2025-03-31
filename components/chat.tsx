@@ -120,6 +120,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
 
     let responseText: string = "Sorry, I didn't understand that. Can you rephrase?";
     let action: ChatAction | null = null;
+    let simulateInappropriateFlag = false; // Simulate the flag from AI
     const lowerMsg = messageText.toLowerCase();
 
     const currentLessonState = llmContext.currentLesson;
@@ -127,7 +128,12 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     const currentLessonData = currentLessonState?.data;
 
     // --- Dynamic Simulation Logic ---
-    if (lowerMsg.includes('help')) {
+    // Add a test case for the inappropriate flag
+    if (lowerMsg.includes('inappropriate_test')) {
+        responseText = "I've detected that your previous message might be inappropriate. Please be respectful.";
+        simulateInappropriateFlag = true; // Trigger the flag for testing
+    }
+    else if (lowerMsg.includes('help')) {
         responseText = "I can help you learn! Try commands like 'start lesson', 'show first quiz', 'next activity', 'previous activity', 'next lesson', 'previous lesson', or 'back to overview'.";
     } else if (lowerMsg.includes('hello') || lowerMsg.includes('hi')) {
         responseText = "Hello there! Ready to learn? Ask me anything about the lessons or say 'start lesson'.";
@@ -244,8 +250,33 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     }
     // --- End Simulation Logic ---
 
+    // Process the simulated inappropriate flag *before* adding the AI message
+    if (simulateInappropriateFlag) {
+        setMessages(prevMessages => {
+            // Find the index of the last user message
+            let lastUserMessageIndex = -1;
+            for (let i = prevMessages.length - 1; i >= 0; i--) {
+                if (prevMessages[i].type === 'user') {
+                    lastUserMessageIndex = i;
+                    break;
+                }
+            }
+
+            if (lastUserMessageIndex !== -1) {
+                // Create a new array with the updated message
+                return prevMessages.map((msg, index) => {
+                    if (index === lastUserMessageIndex) {
+                        return { ...msg, isInappropriate: true }; // Set the flag
+                    }
+                    return msg;
+                });
+            }
+            return prevMessages; // Return previous state if no user message found (shouldn't happen here)
+        });
+    }
+
     const aiMessage: ChatMessage = { text: responseText, type: "ai" };
-    setMessages((prev) => [...prev, aiMessage]);
+    setMessages((prev) => [...prev, aiMessage]); // Add the AI response *after* potentially updating the user message
 
     if (action) {
       onAction(action);
@@ -304,7 +335,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                         : message.type === "typing"
                             ? "bg-transparent text-gray-500 italic self-start border-none shadow-none"
                             : "bg-ai-msg text-dark-gray self-start rounded-bl-sm border border-medium-gray"
-                    }`}
+                    } ${/* Conditionally add red border */ message.type === 'user' && message.isInappropriate ? 'border border-red-500' : ''}`}
                     >
                     {message.type === 'typing' ? (
                         <div className="flex space-x-1">

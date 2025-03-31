@@ -62,7 +62,8 @@ export interface User {
 // --- Chat Related Types ---
 export interface ChatMessage {
   text: string
-  type: "user" | "ai" | "typing"
+  type: "user" | "ai" | "typing";
+  isInappropriate?: boolean; // Flag for potentially inappropriate user messages
 }
 
 // Added ChatAction Type

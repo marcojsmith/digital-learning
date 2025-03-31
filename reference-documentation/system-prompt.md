@@ -36,7 +36,8 @@ Your response MUST be a single, valid JSON object conforming to the `LlmResponse
   } | null,
   "reasoning": "string",
   "contextUpdates": {
-  } | null
+  } | null,
+  "flagsPreviousMessageAsInappropriate": boolean | null // Optional: Indicates if the *previous* user message was flagged
 }
 ```
 
