@@ -7,7 +7,7 @@ import { ChevronDown } from "lucide-react"
 interface SidebarProps {
   subjects: Subject[]
   lessons: Lesson[]
-  currentLessonId: string
+  currentLessonId: string | null // Allow null for initial state
   onLessonSelect: (lessonId: string) => void
   isMobile: boolean
   isOpen: boolean
