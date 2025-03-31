@@ -21,15 +21,18 @@ interface ChatProps {
   onSimulatedMessageProcessed: () => void;
 }
 
-// Define a type for the expected API response structure
-// Define a type for the expected API response structure (flattened)
-interface LlmApiResponse {
+interface LlmResponse {
     responseText: string;
-    actionType?: string | null; // Flattened action type
-    lessonId?: string | null;   // Flattened lesson ID
-    quizId?: string | null;     // Flattened quiz ID
+    actionType?: string | null;
+    lessonId?: string | null;
+    quizId?: string | null;
     contextUpdates?: Partial<LlmContext> | null;
     flagsPreviousMessageAsInappropriate?: boolean | null;
+    reasoning?: string;
+}
+
+interface LlmApiResponse {
+    llmResponse: LlmResponse;
     error?: string;
 }
 
@@ -151,6 +154,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     let flagsPreviousMessageAsInappropriate: boolean | null = null;
 
     // --- Call the API Route ---
+    let apiResponse: LlmApiResponse = { llmResponse: { responseText: '' } };
     try {
         // Prepare availableLessons from chatDb
         const availableLessons = chatDb ? Object.entries(chatDb).reduce((acc, [id, lesson]) => {
@@ -187,19 +191,37 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
             }),
         });
 
-        const apiResponse: LlmApiResponse = await res.json();
+        apiResponse = await res.json();
+        logger.debug("Full API Response", {
+            apiResponse,
+            status: res.status,
+            hasLlmResponse: !!apiResponse.llmResponse,
+            llmResponseKeys: apiResponse.llmResponse ? Object.keys(apiResponse.llmResponse) : [],
+            responseTextExists: !!apiResponse.llmResponse?.responseText,
+            responseTextType: typeof apiResponse.llmResponse?.responseText,
+            component: 'Chat'
+        });
 
         if (!res.ok || apiResponse.error) {
             logger.error(`API Error (${res.status})`, { error: apiResponse.error || res.statusText, status: res.status, component: 'Chat' });
             responseText = `Error: ${apiResponse.error || res.statusText || "Unknown API error"}`;
         } else {
-            responseText = apiResponse.responseText || "Received empty response from assistant.";
-            // Extract flattened action fields
-            actionType = apiResponse.actionType || null;
-            lessonId = apiResponse.lessonId || null;
-            quizId = apiResponse.quizId || null;
-            contextUpdates = apiResponse.contextUpdates || null;
-            flagsPreviousMessageAsInappropriate = apiResponse.flagsPreviousMessageAsInappropriate || null;
+            const llmResponse = apiResponse.llmResponse;
+            logger.debug("API Response Structure", {
+                hasResponseText: llmResponse?.responseText !== undefined && llmResponse?.responseText !== null,
+                responseTextValue: llmResponse?.responseText,
+                responseTextLength: llmResponse?.responseText?.length,
+                responseType: typeof llmResponse?.responseText,
+                component: 'Chat'
+            });
+            responseText = llmResponse?.responseText !== undefined && llmResponse?.responseText !== null
+                ? llmResponse.responseText
+                : "Received empty response from assistant.";
+            actionType = llmResponse?.actionType || null;
+            lessonId = llmResponse?.lessonId || null;
+            quizId = llmResponse?.quizId || null;
+            contextUpdates = llmResponse?.contextUpdates || null;
+            flagsPreviousMessageAsInappropriate = llmResponse?.flagsPreviousMessageAsInappropriate || null;
 
             // --- Update LLM Context based on API response ---
             setLlmContext(prev => {
@@ -269,7 +291,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     setLlmContext(prev => ({
         ...prev,
         // Store flattened action fields in history
-        recentInteractions: [...prev.recentInteractions, { ai_response: { responseText, actionType, lessonId, quizId, contextUpdates, flagsPreviousMessageAsInappropriate } }]
+        recentInteractions: [...prev.recentInteractions, { ai_response: apiResponse.llmResponse }]
     }));
 
      // --- Handle Actions & Logging (Using Flattened Fields) ---

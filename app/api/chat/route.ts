@@ -1,15 +1,14 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold, SchemaType, GenerationConfig, Content, Part } from "@google/generative-ai";
-// Removed duplicate import line
+import { encode } from 'gpt-tokenizer';
 import type { LlmContext } from '@/types';
 import { SYSTEM_PROMPT } from '@/lib/prompts/system-prompt'; // Import the updated prompt constant
 import { logger } from '@/lib/logger'; // Import the new logger
 // --- Utility Functions ---
 function countTokens(obj: any): number {
-  // Simple approximation: 1 token ~ 4 chars in English
-  // Use a proper tokenizer (e.g., gpt-tokenizer) for accuracy in production
+  // Use gpt-tokenizer for accurate token counting
   const jsonString = JSON.stringify(obj);
-  return Math.ceil(jsonString.length / 4);
+  return encode(jsonString).length;
 }
 
 // Placeholder for context summarization logic
@@ -159,8 +158,8 @@ export async function POST(request: Request) {
       reqLogger.info(`Summarized context token count (approx): ${summarizedTokenCount}`);
     } catch (summaryError) {
       reqLogger.error("Error during context summarization", summaryError instanceof Error ? summaryError : { error: summaryError });
-      // Decide how to handle summary failure: proceed with original context or return error?
-      // For now, proceed with the original context but log the error.
+      // Strategy: Log a warning and proceed with the original context if summarization fails or is skipped.
+      console.warn('Context summarization skipped/failed. Proceeding with original context.'); // Added warning
       processedLlmContext = currentLlmContext;
     }
   } else {
@@ -337,86 +336,25 @@ Ensure ALL fields are present, using null where appropriate. Payloads are MANDAT
         // --- End New Validation Logic ---
 
     } catch (parseError) {
-        // Wrap error for logging context if it's an Error instance
+        // Log the parsing/validation error
         const errorContext = parseError instanceof Error ? { error: { message: parseError.message, name: parseError.name } } : { error: parseError };
-        reqLogger.warn("Initial JSON parse/validation failed (v_new format)", errorContext);
-        reqLogger.error("Raw response text that failed initial parsing:", { rawResponse: responseText });
+        reqLogger.error("LLM response parsing/validation failed", errorContext);
+        reqLogger.error("Raw response text that failed parsing:", { rawResponse: responseText }); // Keep raw response log
 
-        // --- Backwards Compatibility: Attempt parsing legacy format ---
-        try {
-            reqLogger.info("Attempting fallback parse with legacy (v_legacy) format.");
-            const legacyParsedResponse = JSON.parse(responseText.trim()); // Re-parse assuming old structure might exist
-
-            // Check if it looks like the legacy structure
-            if (legacyParsedResponse && typeof legacyParsedResponse.action === 'object') {
-                 // Add response_format to the context object
-                reqLogger.info("Successfully parsed as potential legacy format. Transforming to v_new.", { response_format: 'v_legacy' });
-
-                // Transform legacy to new flat structure
-                parsedResponse = {
-                    responseText: legacyParsedResponse.responseText ?? '', // Ensure responseText exists
-                    actionType: legacyParsedResponse.action?.type ?? null,
-                    lessonId: legacyParsedResponse.action?.payload?.lessonId ?? null,
-                    quizId: legacyParsedResponse.action?.payload?.quizId ?? null,
-                    flagsPreviousMessageAsInappropriate: legacyParsedResponse.flagsPreviousMessageAsInappropriate ?? false, // Default to false if missing
-                    reasoning: legacyParsedResponse.reasoning ?? null
-                };
-
-                // --- Re-run Validation Logic on TRANSFORMED legacy response ---
-                reqLogger.info("Re-validating transformed legacy response.");
-                if (parsedResponse.responseText === undefined || parsedResponse.responseText === null) {
-                    throw new Error('Transformed legacy response missing required field: responseText');
-                }
-                if (typeof parsedResponse.flagsPreviousMessageAsInappropriate !== 'boolean') {
-                     throw new Error('Transformed legacy response missing or invalid required field: flagsPreviousMessageAsInappropriate');
-                }
-                if (parsedResponse.actionType) {
-                  switch (parsedResponse.actionType) {
-                    case 'showQuiz':
-                      if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string' || !parsedResponse.quizId || typeof parsedResponse.quizId !== 'string') {
-                        throw new Error(`Transformed legacy action 'showQuiz' missing or invalid 'lessonId' or 'quizId'.`);
-                      }
-                      break;
-                    case 'showLessonOverview':
-                    case 'completeLesson':
-                      if (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string') {
-                        throw new Error(`Transformed legacy action '${parsedResponse.actionType}' missing or invalid 'lessonId'.`);
-                      }
-                      break;
-                    case 'clarifyQuestion':
-                        break; // No specific IDs needed
-                    default:
-                        reqLogger.warn(`Received unknown actionType in transformed legacy response: ${parsedResponse.actionType}`);
-                  }
-                }
-                reqLogger.debug(`Validation passed for transformed legacy response (v_legacy). Action Type: ${parsedResponse.actionType || 'null'}`);
-                // If validation passes, proceed using the transformed 'parsedResponse'
-                 // Extract token usage if available (might not be accurate for legacy parse path)
-                const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
-                reqLogger.logLlmResult(parsedResponse, tokenUsage); // Log transformed result
-
-            } else {
-                 // Parsed but doesn't look like legacy format either
-                 reqLogger.error("Parsed fallback JSON but it doesn't match expected legacy structure.", { parsed: legacyParsedResponse });
-                 throw new Error("Response format is invalid (neither v_new nor recognized v_legacy).");
-            }
-
-        } catch (legacyParseError) {
-            reqLogger.error("Fallback parsing (v_legacy) also failed.", legacyParseError instanceof Error ? legacyParseError : { error: legacyParseError });
-            // If fallback also fails, return the original error response
-            reqLogger.endRequest(500, { error: "Failed to parse LLM response (both v_new and v_legacy attempts failed)" });
-            return NextResponse.json({ error: "Failed to parse LLM response as valid JSON (tried current and legacy formats)." }, { status: 500 });
-        }
-        // --- End Backwards Compatibility ---
+        // End request and return standard error response
+        reqLogger.endRequest(500, { error: "Error processing LLM response" });
+        return new Response('Error processing LLM response', { status: 500 });
     }
 
     // Return the parsed JSON object
     // IMPORTANT: The client needs the updated history. We should add it to the response.
-    // Get the latest history from the chat session object (implementation might vary based on SDK version)
-    // For now, we'll just return the parsed response. Client-side needs adjustment.
-    // TODO: Add updated history to the response payload for the client.
+    // Get the latest history from the chat session object
+    const updatedHistory = await chatSession.getHistory(); // Fetch updated history
+    reqLogger.info(`Returning history with ${updatedHistory.length} entries.`); // Log history length
+
     reqLogger.endRequest(200, { actionType: parsedResponse.actionType }); // Use the new flat field
-    return NextResponse.json(parsedResponse);
+    // Return both the parsed LLM response and the updated history
+    return NextResponse.json({ llmResponse: parsedResponse, history: updatedHistory });
 
   } catch (error) {
     reqLogger.error("Unhandled error in chat API handler", error instanceof Error ? error : { error: error });

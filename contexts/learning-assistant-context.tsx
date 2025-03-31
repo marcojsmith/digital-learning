@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
+import ReactConfetti from 'react-confetti'
 import type { Lesson } from "@/types"
 
 interface LearningAssistantContextType {
@@ -29,6 +30,7 @@ export function LearningAssistantProvider({ children }: { children: React.ReactN
   const [expandedConcepts, setExpandedConcepts] = useState<string[]>([])
   const [notes, setNotes] = useState<Record<string, string>>({})
 
+  const [showConfetti, setShowConfetti] = useState(false)
   // Load state from localStorage when component mounts
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -68,6 +70,30 @@ export function LearningAssistantProvider({ children }: { children: React.ReactN
     }
   }, [isOpen, completedConcepts, expandedConcepts, notes])
 
+
+  // Effect to check for lesson completion and trigger confetti
+  useEffect(() => {
+    if (currentLesson && currentLesson.concepts.length > 0) {
+      const allConceptsComplete = currentLesson.concepts.every((concept) =>
+        completedConcepts.includes(concept)
+      );
+      if (allConceptsComplete) {
+        console.log("Lesson complete! Triggering confetti."); // Added for debugging
+        setShowConfetti(true);
+      }
+    }
+  }, [completedConcepts, currentLesson]);
+
+  // Effect to hide confetti after a delay
+  useEffect(() => {
+    if (showConfetti) {
+      const timer = setTimeout(() => {
+        setShowConfetti(false);
+      }, 5000); // Hide after 5 seconds
+      return () => clearTimeout(timer); // Cleanup timer on unmount or if effect re-runs
+    }
+  }, [showConfetti]);
+
   const toggleAssistant = () => setIsOpen((prev) => !prev)
 
   const markConceptComplete = (conceptId: string) => {
@@ -103,15 +129,9 @@ export function LearningAssistantProvider({ children }: { children: React.ReactN
       }}
     >
       {children}
+      {showConfetti && <ReactConfetti recycle={false} numberOfPieces={200} />}
     </LearningAssistantContext.Provider>
   )
 }
 
-export function useLearningAssistant() {
-  const context = useContext(LearningAssistantContext)
-  if (context === undefined) {
-    throw new Error("useLearningAssistant must be used within a LearningAssistantProvider")
-  }
-  return context
-}
 
