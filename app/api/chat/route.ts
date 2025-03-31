@@ -70,8 +70,9 @@ const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
 const model = genAI?.getGenerativeModel({
   // Use a model supporting JSON mode
-   model: "gemini-2.0-flash",
   // model: "gemini-2.5-pro-exp-03-25",
+  // model: "gemini-2.0-flash",
+   model: "gemini-2.0-flash-lite",
 });
 
 const generationConfig: GenerationConfig = { // Explicitly type the config
