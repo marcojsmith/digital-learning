@@ -1,0 +1,90 @@
+# LLM Test Input: Request Previous Quiz at Start of Lesson
+
+**Scenario:** User is in `lesson1` and currently viewing the first quiz (`quizA`). They ask to go to the previous activity.
+
+**Expected LLM Action:** `showLessonOverview` with `payload: { lessonId: "lesson1" }` (fallback to lesson overview).
+
+```json
+{
+  "currentUserMessage": "previous activity",
+  "currentLlmContext": {
+    "studentProfile": {
+      "name": "Alex",
+      "grade": 5,
+      "age": 10,
+      "learningStyle": "Visual",
+      "challenges": []
+    },
+    "currentLesson": {
+      "id": "lesson1",
+      "data": {
+        "id": "lesson1",
+        "title": "Introduction to Numbers",
+        "description": "An introduction to basic numbers.",
+        "concepts": ["counting", "number_identity"],
+        "subject": "Math",
+        "progress": "in-progress",
+        "quizzes": [
+          { "id": "quizA", "title": "Number Recognition", "type": "multiple-choice", "concepts": ["number_identity"], "items": [ { "question": "What number comes after 4?", "options": [ { "text": "3", "correct": false }, { "text": "5", "correct": true }, { "text": "6", "correct": false } ] } ] },
+          { "id": "quizB", "title": "Counting Practice", "type": "list", "concepts": ["counting"], "items": [] }
+        ],
+        "nextLesson": "lesson2",
+        "prevLesson": null
+      },
+      "startTime": "2025-03-31T10:15:00.000Z",
+      "progressPercentage": 10
+    },
+    "currentQuiz": {
+       "id": "quizA",
+       "data": { "id": "quizA", "title": "Number Recognition", "type": "multiple-choice", "concepts": ["number_identity"], "items": [ { "question": "What number comes after 4?", "options": [ { "text": "3", "correct": false }, { "text": "5", "correct": true }, { "text": "6", "correct": false } ] } ] },
+       "startTime": "2025-03-31T10:18:00.000Z",
+       "attempts": 0,
+       "answers": {},
+       "correctCount": 0
+    },
+    "progressHistory": [],
+    "recentInteractions": [
+      { "user": "Let's begin" },
+      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } },
+      { "user": "Okay, show me the first activity" },
+      { "ai_response": { "action": { "type": "showQuiz", "payload": { "lessonId": "lesson1", "quizId": "quizA" } } } }
+    ],
+    "conceptsIntroduced": ["counting", "number_identity"],
+    "conceptsMastered": [],
+    "conceptsStruggling": []
+  },
+  "availableLessons": {
+    "lesson1": "Introduction to Numbers",
+    "lesson2": "Basic Addition",
+    "lesson3": "Counting Objects"
+  },
+  "currentLessonData": {
+    "id": "lesson1",
+    "title": "Introduction to Numbers",
+    "description": "An introduction to basic numbers.",
+    "concepts": ["counting", "number_identity"],
+    "subject": "Math",
+    "progress": "in-progress",
+    "quizzes": [
+      { "id": "quizA", "title": "Number Recognition", "type": "multiple-choice", "concepts": ["number_identity"], "items": [ { "question": "What number comes after 4?", "options": [ { "text": "3", "correct": false }, { "text": "5", "correct": true }, { "text": "6", "correct": false } ] } ] },
+      { "id": "quizB", "title": "Counting Practice", "type": "list", "concepts": ["counting"], "items": [] }
+    ],
+    "nextLesson": "lesson2",
+    "prevLesson": null
+  }
+}
+```
+
+## Expected LLM Response
+
+```json
+{
+  "responseText": "You're already on the first activity ('Number Recognition'). Going back to the lesson overview for 'Introduction to Numbers'.",
+  "action": {
+    "type": "showLessonOverview",
+    "payload": {
+      "lessonId": "lesson1"
+    }
+  }
+}
+```
