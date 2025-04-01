@@ -72,7 +72,7 @@ This file contains an example JSON input object to send to the LLM when the user
     "progressHistory": [],
     "recentInteractions": [
       { "user": "Let's begin" },
-      { "ai_response": { "responseText": "Great! Let's begin...", "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } },
+      { "ai_response": { "responseText": "Great! Let's begin...", "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson1" } } } },
       { "user": "Okay, show me the first activity" },
       { "ai_response": { "responseText": "Okay, here's the first activity...", "action": { "type": "showQuiz", "payload": { "lessonId": "lesson1", "quizId": "quizA" } } } }
     ],

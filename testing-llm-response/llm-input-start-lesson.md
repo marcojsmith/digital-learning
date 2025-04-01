@@ -35,7 +35,7 @@ This file contains an example JSON input object to send to the LLM when the user
 {
   "responseText": "Great! Let's begin with lesson 'Introduction to Numbers'. I'll bring up the overview.",
   "action": {
-    "type": "showLessonOverview",
+    "type": "displayLessonContent",
     "payload": { "lessonId": "lesson1" }
   }
 }

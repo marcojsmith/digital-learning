@@ -83,12 +83,21 @@ export interface User {
 
 // --- Chat Related Types ---
 /**
+ * Represents a single clarification option presented to the user.
+ */
+export interface ClarificationOption {
+  label: string; // Text displayed on the button
+  value: string; // Text sent back when the button is clicked
+}
+
+/**
  * Represents a single message in the chat interface.
  */
 export interface ChatMessage {
   text: string;
   type: "user" | "ai" | "typing";
   isInappropriate?: boolean; // Flag for potentially inappropriate user messages
+  clarificationOptions?: ClarificationOption[]; // Optional clarification buttons
 }
 
 // Added ChatAction Type
@@ -97,7 +106,7 @@ export interface ChatMessage {
  * Defines the possible action types the AI can request the frontend to perform.
  */
 export type ActionType =
-  | "showLessonOverview"
+  | "displayLessonContent" // Renamed from 
   | "showQuiz"
   | "completeLesson"
   | "returnToLessonOverview"
@@ -105,6 +114,7 @@ export type ActionType =
   | "showNextQuiz"
   | "generateFullLesson" // Added for full lesson generation
   | "generateQuiz" // Added for LLM quiz generation
+  | "requestClarification" // Added for clarification requests
   | null; // Added null based on LLMResponse definition
 
 // Updated ChatAction interface reflecting the flattened structure

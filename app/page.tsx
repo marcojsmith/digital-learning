@@ -90,7 +90,7 @@ export default function Home() {
    */
   const handleLessonSelect = (lessonId: string) => {
     if (lessonsData.some(l => l.id === lessonId)) {
-        handleChatAction({ actionType: 'showLessonOverview', lessonId: lessonId, quizId: null });
+        handleChatAction({ actionType: 'displayLessonContent', lessonId: lessonId, quizId: null });
         window.scrollTo(0, 0)
         if (isMobile && sidebarOpen) {
             toggleSidebar();
@@ -119,14 +119,14 @@ export default function Home() {
   const handleChatAction = (action: ChatAction) => {
     console.log("Chat Action Received in page.tsx:", action);
     switch (action.actionType) {
-        case "showLessonOverview":
+        case "displayLessonContent":
             if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
                 setCurrentLessonId(action.lessonId);
                 setGeneratedLessonContent(null);
                 setCurrentQuizIdToShow(null);
                 setGeneratedQuizData(null); // Clear generated quiz
             } else {
-                 console.warn("showLessonOverview action received without valid lessonId", { action });
+                 console.warn("displayLessonContent action received without valid lessonId", { action });
             }
             break;
         case "showQuiz":

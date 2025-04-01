@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson2` and asks to return to the previous lesson (`lesson1`).
 
-**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson1'`.
+**Expected LLM Action:** `actionType: 'displayLessonContent'`, `lessonId: 'lesson1'`.
 
 ```json
 {
@@ -37,13 +37,13 @@
     "progressHistory": [],
     "recentInteractions": [
       { "user": "Let's begin" },
-      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } },
+      { "ai_response": { "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson1" } } } },
       { "user": "Okay, show me the first activity" },
       { "ai_response": { "action": { "type": "showQuiz", "payload": { "lessonId": "lesson1", "quizId": "quizA" } } } },
       { "user": "I think it's 5" },
       { "ai_response": { "responseText": "Yes, that's correct! 5 comes after 4. Great job!", "contextUpdates": { "conceptsMastered": ["number_identity"] } } },
       { "user": "next lesson please" },
-      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson2" } } } }
+      { "ai_response": { "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson2" } } } }
     ],
     "conceptsIntroduced": ["counting", "number_identity", "addition", "sum"],
     "conceptsMastered": ["number_identity"],
@@ -75,7 +75,7 @@
 ```json
 {
   "responseText": "Okay, going back to the previous lesson: 'Introduction to Numbers'.",
-  "actionType": "showLessonOverview",
+  "actionType": "displayLessonContent",
   "lessonId": "lesson1",
   "quizId": null,
   "flagsPreviousMessageAsInappropriate": false

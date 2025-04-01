@@ -2,7 +2,7 @@
 
 **Scenario:** User is in `lesson1` and currently viewing the first quiz (`quizA`). They ask to go to the previous activity.
 
-**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson1'` (fallback to lesson overview).
+**Expected LLM Action:** `actionType: 'displayLessonContent'`, `lessonId: 'lesson1'` (fallback to lesson overview).
 
 ```json
 {
@@ -45,7 +45,7 @@
     "progressHistory": [],
     "recentInteractions": [
       { "user": "Let's begin" },
-      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } },
+      { "ai_response": { "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson1" } } } },
       { "user": "Okay, show me the first activity" },
       { "ai_response": { "action": { "type": "showQuiz", "payload": { "lessonId": "lesson1", "quizId": "quizA" } } } }
     ],
@@ -80,7 +80,7 @@
 ```json
 {
   "responseText": "You're already on the first activity ('Number Recognition'). Going back to the lesson overview for 'Introduction to Numbers'.",
-  "actionType": "showLessonOverview",
+  "actionType": "displayLessonContent",
   "lessonId": "lesson1",
   "quizId": null,
   "flagsPreviousMessageAsInappropriate": false

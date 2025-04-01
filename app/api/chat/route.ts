@@ -177,7 +177,19 @@ const generationConfig: GenerationConfig = {
         }
       },
       flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN },
-      reasoning: { type: SchemaType.STRING, nullable: true }
+      reasoning: { type: SchemaType.STRING, nullable: true },
+      clarificationOptions: { // Added for clarification buttons
+        type: SchemaType.ARRAY,
+        nullable: true,
+        items: {
+          type: SchemaType.OBJECT,
+          properties: {
+            label: { type: SchemaType.STRING },
+            value: { type: SchemaType.STRING }
+          },
+          required: ["label", "value"]
+        }
+      },
     },
     required: ["responseText", "flagsPreviousMessageAsInappropriate"]
   },
@@ -354,29 +366,34 @@ export async function POST(request: Request): Promise<NextResponse> {
     // Attempt to parse the JSON response text
     let parsedResponse;
     try {
-        const jsonToParse = responseText.trim();
-        if (!jsonToParse) {
-             reqLogger.error("Received empty JSON string from LLM.", { rawResponse: responseText });
-             throw new Error("Empty JSON content from LLM response.");
+      const jsonToParse = responseText.trim();
+      if (!jsonToParse) {
+           reqLogger.error("Received empty JSON string from LLM.", { rawResponse: responseText });
+           throw new Error("Empty JSON content from LLM response.");
+      }
+      try {
+          parsedResponse = JSON.parse(jsonToParse);
+          reqLogger.info("Successfully parsed Gemini JSON response.", { rawResponsePreview: jsonToParse.substring(0, 100) }); // Log success + preview
+      } catch (jsonParseError) {
+          reqLogger.error("Failed to parse LLM JSON response", jsonParseError instanceof Error ? jsonParseError : { error: jsonParseError });
+          reqLogger.error("Raw response text that failed parsing:", { rawResponse: responseText });
+          // Throw a new error specifically indicating parsing failure
+          throw new Error(`LLM response JSON parsing failed: ${jsonParseError instanceof Error ? jsonParseError.message : 'Unknown parsing error'}`);
+      }
+
+      // Clean up potential LLM prefix and duplicate title in lesson content (only if parsing succeeded)
+      if (parsedResponse.lessonMarkdownContent && typeof parsedResponse.lessonMarkdownContent === 'string') {
+        const lines = parsedResponse.lessonMarkdownContent.split('\n');
+        // Check if there are at least two lines and they match the expected prefixes
+        if (lines.length >= 2 && lines[0].startsWith('Lesson generated-: Lesson:') && lines[1].startsWith('Lesson:')) {
+          // Remove the first two lines and join the rest
+          parsedResponse.lessonMarkdownContent = lines.slice(2).join('\n');
+          reqLogger.info("Cleaned up LLM lesson content prefix and duplicate title.");
         }
+      }
 
-        parsedResponse = JSON.parse(jsonToParse);
-        reqLogger.info("Successfully parsed Gemini JSON response (v_new).", { response_format: 'v_new' });
-        // Clean up potential LLM prefix and duplicate title in lesson content
-        if (parsedResponse.lessonMarkdownContent && typeof parsedResponse.lessonMarkdownContent === 'string') {
-          const lines = parsedResponse.lessonMarkdownContent.split('\n');
-          // Check if there are at least two lines and they match the expected prefixes
-          if (lines.length >= 2 && lines[0].startsWith('Lesson generated-: Lesson:') && lines[1].startsWith('Lesson:')) {
-            // Remove the first two lines and join the rest
-            parsedResponse.lessonMarkdownContent = lines.slice(2).join('\n');
-            reqLogger.info("Cleaned up LLM lesson content prefix and duplicate title.");
-          }
-        }
-
-
-        const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
-        reqLogger.logLlmResult(parsedResponse, tokenUsage);
-
+      const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
+      reqLogger.logLlmResult(parsedResponse, tokenUsage);
         // --- Start Response Validation ---
         if (parsedResponse.responseText === undefined || parsedResponse.responseText === null) {
             reqLogger.error('Validation Error: responseText is missing or null.', { response: parsedResponse });
@@ -390,7 +407,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         // Action-specific validation
         if (parsedResponse.actionType) {
           const action = parsedResponse.actionType;
-          const requiresLessonId = ['showQuiz', 'showLessonOverview', 'completeLesson', 'returnToLessonOverview'];
+          const requiresLessonId = ['showQuiz', 'displayLessonContent', 'completeLesson', 'returnToLessonOverview'];
           const requiresQuizId = ['showQuiz', 'showPreviousQuiz', 'showNextQuiz']; // Added from types
           const requiresMarkdown = ['generateFullLesson'];
           const requiresGeneratedQuiz = ['generateQuiz']; // Added

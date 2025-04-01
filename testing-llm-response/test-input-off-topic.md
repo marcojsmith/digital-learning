@@ -38,7 +38,7 @@
     "progressHistory": [],
     "recentInteractions": [
       { "user": "Let's begin" },
-      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } }
+      { "ai_response": { "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson1" } } } }
     ],
     "conceptsIntroduced": ["counting", "number_identity"],
     "conceptsMastered": [],

@@ -2,7 +2,7 @@
 
 **Scenario:** User is currently in `lesson1` and asks to proceed to the next lesson (`lesson2`).
 
-**Expected LLM Action:** `actionType: 'showLessonOverview'`, `lessonId: 'lesson2'`.
+**Expected LLM Action:** `actionType: 'displayLessonContent'`, `lessonId: 'lesson2'`.
 
 ```json
 {
@@ -38,7 +38,7 @@
     "progressHistory": [],
     "recentInteractions": [
       { "user": "Let's begin" },
-      { "ai_response": { "action": { "type": "showLessonOverview", "payload": { "lessonId": "lesson1" } } } },
+      { "ai_response": { "action": { "type": "displayLessonContent", "payload": { "lessonId": "lesson1" } } } },
       { "user": "Okay, show me the first activity" },
       { "ai_response": { "action": { "type": "showQuiz", "payload": { "lessonId": "lesson1", "quizId": "quizA" } } } },
       { "user": "I think it's 5" },
@@ -74,7 +74,7 @@
 ```json
 {
   "responseText": "Okay, moving on to the next lesson: 'Basic Addition'.",
-  "actionType": "showLessonOverview",
+  "actionType": "displayLessonContent",
   "lessonId": "lesson2",
   "quizId": null,
   "flagsPreviousMessageAsInappropriate": false
