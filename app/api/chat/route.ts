@@ -68,11 +68,18 @@ const systemPromptText = SYSTEM_PROMPT; // Use the imported constant directly
 const apiKey = process.env.GEMINI_API_KEY;
 const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
 
+// Get model name from environment variable
+const llmModelName = process.env.LLM_MODEL_NAME;
+
+if (!llmModelName) {
+  logger.error("LLM_MODEL_NAME environment variable is not set.");
+  throw new Error("LLM_MODEL_NAME environment variable is not set. Please configure it.");
+  // Note: Throwing an error here will prevent the server from starting/handling requests
+  // if the model name isn't configured, which is safer than using a potentially incorrect default.
+}
+
 const model = genAI?.getGenerativeModel({
-  // Use a model supporting JSON mode
-  // model: "gemini-2.5-pro-exp-03-25",
-  // model: "gemini-2.0-flash",
-   model: "gemini-2.0-flash-lite",
+  model: llmModelName, // Use the environment variable
 });
 
 const generationConfig: GenerationConfig = { // Explicitly type the config
