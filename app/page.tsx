@@ -10,7 +10,13 @@ import { Menu } from "lucide-react"
 import { getSubjects, getLessons } from "@/lib/data-service"
 import type { Subject, Lesson, ChatAction } from "@/types"
 
-
+/**
+ * The main page component for the Digital Learning Platform.
+ * Manages the overall layout, data fetching, and state for lesson display,
+ * quiz interaction, sidebar visibility, and chat communication.
+ *
+ * @returns {JSX.Element} The rendered home page.
+ */
 export default function Home() {
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(null);
   const [currentQuizIdToShow, setCurrentQuizIdToShow] = useState<string | null>(null);
@@ -19,12 +25,14 @@ export default function Home() {
   const [lessonsData, setLessonsData] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  // State for simulated message
   const [simulatedMessageToSend, setSimulatedMessageToSend] = useState<{ text: string; id: number } | null>(null);
-  const [generatedLessonContent, setGeneratedLessonContent] = useState<string | null>(null); // State for dynamically generated content
+  const [generatedLessonContent, setGeneratedLessonContent] = useState<string | null>(null);
 
   const isMobile = useMobile()
 
+  /**
+   * Fetches initial subject and lesson data on component mount.
+   */
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -47,16 +55,21 @@ export default function Home() {
     loadData();
   }, []);
 
+  /**
+   * Updates the URL hash when the current lesson changes.
+   */
   useEffect(() => {
     if (!isLoading && currentLessonId && lessonsData.some(l => l.id === currentLessonId)) {
          window.location.hash = `#${currentLessonId}`;
     } else if (!isLoading && !currentLessonId) {
-        // Clear hash if no lesson selected
-        // history.pushState("", document.title, window.location.pathname + window.location.search);
+        // Clear hash if no lesson selected (optional: could use history API)
     }
   }, [currentLessonId, isLoading, lessonsData]);
 
-
+  /**
+   * Toggles the visibility of the sidebar, especially on mobile.
+   * Adds/removes a class to the body for potential global styling adjustments.
+   */
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen)
     if (!sidebarOpen) {
@@ -66,9 +79,15 @@ export default function Home() {
     }
   }
 
+  /**
+   * Handles the selection of a lesson from the sidebar.
+   * Triggers a chat action to show the lesson overview and scrolls to the top.
+   * Closes the sidebar on mobile if it was open.
+   *
+   * @param {string} lessonId - The ID of the selected lesson.
+   */
   const handleLessonSelect = (lessonId: string) => {
     if (lessonsData.some(l => l.id === lessonId)) {
-        // Pass the action using the new flattened structure
         handleChatAction({ actionType: 'showLessonOverview', lessonId: lessonId, quizId: null });
         window.scrollTo(0, 0)
         if (isMobile && sidebarOpen) {
@@ -77,21 +96,31 @@ export default function Home() {
     }
   }
 
+  /**
+   * Marks a lesson as completed in the local state.
+   *
+   * @param {string} lessonId - The ID of the lesson to mark as complete.
+   */
   const handleLessonComplete = (lessonId: string) => {
     setLessonsData((prev) =>
       prev.map((lesson) => (lesson.id === lessonId ? { ...lesson, progress: "completed" as const } : lesson)),
     )
-    setCurrentQuizIdToShow(null);
+    setCurrentQuizIdToShow(null); // Ensure no quiz is shown after completion
   }
 
+  /**
+   * Processes actions received from the Chat component.
+   * Updates the page state based on the action type (e.g., showing lessons, quizzes, generated content).
+   *
+   * @param {ChatAction} action - The action object received from the chat.
+   */
   const handleChatAction = (action: ChatAction) => {
     console.log("Chat Action Received in page.tsx:", action);
-    // Use actionType, lessonId, quizId from the flattened structure
     switch (action.actionType) {
         case "showLessonOverview":
             if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
                 setCurrentLessonId(action.lessonId);
-                setGeneratedLessonContent(null); // Clear generated content
+                setGeneratedLessonContent(null);
                 setCurrentQuizIdToShow(null);
             } else {
                  console.warn("showLessonOverview action received without valid lessonId", { action });
@@ -102,9 +131,9 @@ export default function Home() {
                 const targetLesson = lessonsData.find(l => l.id === action.lessonId);
                 if (targetLesson && targetLesson.quizzes.some(q => q.id === action.quizId)) {
                     if (currentLessonId !== action.lessonId) {
-                        setCurrentLessonId(action.lessonId); // Switch lesson if needed
+                        setCurrentLessonId(action.lessonId);
                     }
-                    setGeneratedLessonContent(null); // Clear generated content
+                    setGeneratedLessonContent(null);
                     setCurrentQuizIdToShow(action.quizId);
                 } else {
                     console.warn(`Attempted to show non-existent quiz: ${action.lessonId}/${action.quizId}`, { action });
@@ -123,48 +152,49 @@ export default function Home() {
         case "returnToLessonOverview":
             if (action.lessonId && lessonsData.some(l => l.id === action.lessonId)) {
                  if (currentLessonId !== action.lessonId) {
-                    setCurrentLessonId(action.lessonId); // Switch lesson if needed
+                    setCurrentLessonId(action.lessonId);
                  }
-                 setGeneratedLessonContent(null); // Clear generated content
-                 setCurrentQuizIdToShow(null); // Always hide quiz when returning to overview
+                 setGeneratedLessonContent(null);
+                 setCurrentQuizIdToShow(null);
             } else {
                  console.warn("returnToLessonOverview action received without valid lessonId", { action });
             }
             break;
         case "generateFullLesson":
-            // Handle dynamically generated lesson content
             console.log("[generateFullLesson] Received action:", JSON.stringify(action, null, 2));
             if (action.lessonMarkdownContent) {
                 console.log("[generateFullLesson] lessonMarkdownContent received (snippet):", action.lessonMarkdownContent.substring(0, 100) + '...');
-                setGeneratedLessonContent(action.lessonMarkdownContent); // Store the generated content
-                setCurrentLessonId(null); // Clear current lesson ID to show generated content
-                setCurrentQuizIdToShow(null); // Ensure no quiz is shown
+                setGeneratedLessonContent(action.lessonMarkdownContent);
+                setCurrentLessonId(null);
+                setCurrentQuizIdToShow(null);
                 console.log("[generateFullLesson] Stored generated content and cleared currentLessonId.");
             } else {
                  console.warn("[generateFullLesson] Failed: lessonMarkdownContent is missing.", { action });
             }
             break;
-        // Add cases for showPreviousQuiz, showNextQuiz if needed by UI logic later
         default:
-             // Log any action type that falls through to the default case.
              console.log("Unhandled chat action type:", action.actionType, { action });
              }
     }
 
-  // Removed handleNavigateRequest and handleShowQuiz
-
-  // New handler to set the simulated message state
+  /**
+   * Sets the state to trigger sending a simulated user message via the Chat component.
+   *
+   * @param {string} message - The message text to simulate.
+   */
   const handleSimulateUserMessage = (message: string) => {
       console.log(`Queueing simulated message: "${message}"`);
       setSimulatedMessageToSend({ text: message, id: Date.now() }); // Use timestamp as unique ID
   };
 
-  // New handler to clear the simulated message state after processing
+  /**
+   * Clears the simulated message state, typically called by the Chat component
+   * after it has processed the message.
+   */
   const handleSimulatedMessageProcessed = () => {
       console.log("Simulated message processed, clearing state.");
       setSimulatedMessageToSend(null);
   };
-
 
   const currentLesson = currentLessonId ? lessonsData.find((lesson) => lesson.id === currentLessonId) : null;
 
@@ -175,43 +205,55 @@ export default function Home() {
     return <div className="flex justify-center items-center min-h-screen text-red-600">{error}</div>;
   }
 
+  /**
+   * Extracts the main title (H1) from a Markdown string.
+   *
+   * @param {string} markdown - The Markdown content.
+   * @returns {string} The extracted title or a default fallback.
+   */
+  const extractTitleFromMarkdown = (markdown: string): string => {
+    const lines = markdown.split('\n');
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('# ')) {
+        return trimmedLine.substring(2).trim();
+      }
+    }
+    return "Generated Lesson"; // Fallback if no H1 found
+  };
+
+  /**
+   * Renders the main content area based on the current state.
+   * Priorities:
+   * 1. Dynamically generated lesson content.
+   * 2. Currently selected lesson (with or without quiz).
+   * 3. Welcome message if no lesson is selected or generated.
+   *
+   * @returns {JSX.Element} The main content element.
+   */
   const renderMainContent = () => {
     // Priority 1: Display dynamically generated content if available
     if (generatedLessonContent) {
-        // Extract title from Markdown H1
-        const extractTitleFromMarkdown = (markdown: string): string => {
-          const lines = markdown.split('\n');
-          for (const line of lines) {
-            const trimmedLine = line.trim();
-            if (trimmedLine.startsWith('# ')) {
-              // Found H1, extract title after '# '
-              return trimmedLine.substring(2).trim();
-            }
-          }
-          // Fallback if no H1 found
-          return "Generated Lesson";
-        };
         const extractedTitle = extractTitleFromMarkdown(generatedLessonContent);
 
-        // Create a temporary Lesson object for display using the extracted title
+        // Create a temporary Lesson object for display
         const generatedLesson: Lesson = {
             id: 'generated-lesson', // Temporary ID
-            title: extractedTitle, // Use extracted title
+            title: extractedTitle,
             contentMarkdown: generatedLessonContent,
-            concepts: [], // No predefined concepts
-            subject: 'Generated', // Placeholder subject
-            progress: 'not-started', // Not applicable
-            quizzes: [], // No quizzes
+            concepts: [],
+            subject: 'Generated',
+            progress: 'not-started',
+            quizzes: [],
         };
         return (
             <LessonContent
                 key={`generated-lesson-${Date.now()}`} // Use timestamp for unique key
                 lesson={generatedLesson}
-                allLessons={lessonsData} // Pass existing lessons for context if needed by component
-                currentQuizIdToShow={null} // No quiz for generated content
+                allLessons={lessonsData}
+                currentQuizIdToShow={null}
                 onSimulateUserMessage={handleSimulateUserMessage}
-                onLessonComplete={() => { /* No completion for generated */ }} // Disable completion
-                // Removed onNavigateRequest and onShowQuiz
+                onLessonComplete={() => { /* No completion for generated */ }}
             />
         );
     }
@@ -225,7 +267,6 @@ export default function Home() {
                 currentQuizIdToShow={currentQuizIdToShow}
                 onSimulateUserMessage={handleSimulateUserMessage}
                 onLessonComplete={handleLessonComplete}
-                // Removed onNavigateRequest and onShowQuiz
             />
         );
     }
@@ -276,11 +317,10 @@ export default function Home() {
         </main>
 
         <div className="fixed right-0 top-[74px] bottom-0 w-[360px] z-40 hidden md:block">
-             {/* Pass new props to Chat */}
              <Chat
                 onAction={handleChatAction}
                 simulatedMessage={simulatedMessageToSend}
-                activeLessonId={currentLessonId} // Pass the current lesson ID
+                activeLessonId={currentLessonId}
                 onSimulatedMessageProcessed={handleSimulatedMessageProcessed}
              />
         </div>

@@ -1,9 +1,20 @@
-import type { User } from "@/types"
+import type { User } from "@/types";
 
+/**
+ * Props for the Header component.
+ */
 interface HeaderProps {
-  user: User
+	/** The user object containing details like name and avatar initials. */
+	user: User;
 }
 
+/**
+ * Renders the main application header displaying the platform title and user information.
+ *
+ * @param props - The component props.
+ * @param props.user - The current user's data.
+ * @returns The Header component JSX.
+ */
 export default function Header({ user }: HeaderProps) {
   return (
     <header className="bg-gradient-to-r from-primary to-primary-dark text-white p-4 shadow-md sticky top-0 z-50 flex justify-between items-center">

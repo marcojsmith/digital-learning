@@ -1,5 +1,6 @@
 import type { Lesson, Subject, LessonQuiz } from "@/types" // Import LessonQuiz
 
+// Mock data defining the available subjects and their associated lesson IDs.
 export const subjects: Subject[] = [
   {
     id: "math",
@@ -23,6 +24,7 @@ export const subjects: Subject[] = [
 
 // Removed extractText function as content is now Markdown
 
+// Mock data defining the individual lessons, including content, concepts, and quizzes.
 export const lessons: Lesson[] = [
   // Lesson 1
   {

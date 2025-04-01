@@ -1,70 +1,110 @@
-"use client"
-import React from 'react';
-import { useState, useEffect } from "react";
+"use client";
 
-import ReactMarkdown, { type Components } from 'react-markdown'
-// Removed unstable import: import { type CodeProps } from 'react-markdown/lib/ast-to-react'
-import remarkGfm from 'remark-gfm'
-import type { Lesson, LessonQuiz, LessonQuizItem } from "@/types" // Added LessonQuizItem
+import React, { useState, useEffect, useCallback } from "react"; // Added useCallback
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Lesson, LessonQuiz, LessonQuizItem } from "@/types";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input"; // Added Input import
+import { Input } from "@/components/ui/input";
+
+/**
+ * Props for the LessonContent component.
+ */
 interface LessonContentProps {
-  lesson: Lesson
-  allLessons: Lesson[] // Keep for nav titles
-  currentQuizIdToShow: string | null
-  onSimulateUserMessage: (message: string) => void; // New prop
-  onLessonComplete: (lessonId: string) => void // Keep for now
-  // Removed onNavigateRequest and onShowQuiz
+	/** The current lesson object to display. */
+	lesson: Lesson;
+	/** Array of all available lessons (used for navigation titles). */
+	allLessons: Lesson[];
+	/** The ID of the specific quiz within the lesson to display, or null to show lesson overview. */
+	currentQuizIdToShow: string | null;
+	/** Callback function to send a simulated user message to the chat component. */
+	onSimulateUserMessage: (message: string) => void;
+	/** Callback function invoked when a lesson is considered complete (kept for potential future use). */
+	onLessonComplete: (lessonId: string) => void;
 }
 
-// Helper Function to Render Specific Quiz (updated for Markdown)
+// --- Shared Markdown Component Configuration ---
+/**
+ * Configuration object for customizing ReactMarkdown rendering.
+ * Handles image placeholders and basic code block styling.
+ */
+const markdownComponentsConfig: Components = {
+	img: ({ node, ...props }: { node?: any; src?: string; alt?: string }) => {
+		if (props.src?.startsWith("placeholder:")) {
+			const description = props.src.substring("placeholder:".length);
+			return (
+				<span className="block text-center p-4 border border-dashed border-gray-400 rounded my-4 bg-gray-50 dark:bg-gray-800">
+					🖼️ Image Placeholder:{" "}
+					{props.alt || description || "No description provided"}
+				</span>
+			);
+		}
+		// eslint-disable-next-line @next/next/no-img-element
+		return <img {...props} alt={props.alt || ""} />; // Default rendering
+	},
+	code({
+		node,
+		inline,
+		className,
+		children,
+		...props
+	}: {
+		node?: any;
+		inline?: boolean;
+		className?: string;
+		children?: React.ReactNode;
+	}) {
+		const match = /language-(\w+)/.exec(className || "");
+		return !inline && match ? (
+			<div className="my-4 rounded bg-gray-900 dark:bg-black overflow-hidden">
+				<div className="px-4 py-1 bg-gray-700 dark:bg-gray-800 text-xs text-gray-300 font-mono flex justify-between items-center">
+					<span>{match[1]}</span>
+					{/* TODO: Add copy button? */}
+				</div>
+				<pre className="p-4 text-sm text-gray-100 overflow-x-auto">
+					<code className={className} {...props}>
+						{children}
+					</code>
+				</pre>
+			</div>
+		) : (
+			<code className={className} {...props}>
+				{children}
+			</code>
+		);
+	},
+};
+
+// --- Quiz Rendering Logic ---
+
+/**
+ * Renders the appropriate UI for a given quiz based on its type.
+ *
+ * @param quiz - The quiz object to render.
+ * @param selectedAnswer - The currently selected answer for multiple-choice quizzes.
+ * @param setSelectedAnswer - State setter for the selected multiple-choice answer.
+ * @param listAnswers - State object holding answers for list-type quizzes.
+ * @param setListAnswers - State setter for list-type quiz answers.
+ * @param tableAnswers - State object holding answers for table-type quizzes.
+ * @param setTableAnswers - State setter for table-type quiz answers.
+ * @param expansionAnswers - State object holding answers for expansion-type quizzes.
+ * @param setExpansionAnswers - State setter for expansion-type quiz answers.
+ * @returns The JSX element representing the rendered quiz.
+ */
 const renderQuiz = (
-  quiz: LessonQuiz,
-  selectedAnswer: string | null,
-  setSelectedAnswer: (value: string | null) => void,
-  listAnswers: { [key: string]: string },
-  setListAnswers: (answers: { [key: string]: string }) => void,
-  tableAnswers: { [key: string]: string },
-  setTableAnswers: (answers: { [key: string]: string }) => void,
-  expansionAnswers: { [key: string]: string }, // Added expansionAnswers state
-  setExpansionAnswers: (answers: { [key: string]: string }) => void // Added setter for expansionAnswers
+	quiz: LessonQuiz,
+	selectedAnswer: string | null,
+	setSelectedAnswer: (value: string | null) => void,
+	listAnswers: { [key: string]: string },
+	setListAnswers: (answers: { [key: string]: string }) => void,
+	tableAnswers: { [key: string]: string },
+	setTableAnswers: (answers: { [key: string]: string }) => void,
+	expansionAnswers: { [key: string]: string },
+	setExpansionAnswers: (answers: { [key: string]: string }) => void
 ) => {
-  // Common Markdown components configuration
-  const markdownComponents: Components = { // Add Components type
-    // Handle custom image placeholder syntax: ![Alt text](placeholder:description)
-    img: ({ node, ...props }: { node?: any; src?: string; alt?: string }) => {
-      if (props.src?.startsWith('placeholder:')) {
-        const description = props.src.substring('placeholder:'.length);
-        return (
-          <span className="block text-center p-4 border border-dashed border-gray-400 rounded my-4 bg-gray-50 dark:bg-gray-800">
-            🖼️ Image Placeholder: {props.alt || description || 'No description provided'}
-          </span>
-        );
-      }
-      // eslint-disable-next-line @next/next/no-img-element
-      return <img {...props} alt={props.alt || ''} />; // Default rendering for other images
-    },
-    // Optional: Add custom styling or handling for other elements like code blocks
-    code({ node, inline, className, children, ...props }: { node?: any; inline?: boolean; className?: string; children?: React.ReactNode }) { // Define type inline
-      const match = /language-(\w+)/.exec(className || '')
-      return !inline && match ? (
-        <div className="my-4 rounded bg-gray-900 dark:bg-black overflow-hidden">
-          <div className="px-4 py-1 bg-gray-700 dark:bg-gray-800 text-xs text-gray-300 font-mono flex justify-between items-center">
-            <span>{match[1]}</span>
-            {/* Add copy button? */}
-          </div>
-          <pre className="p-4 text-sm text-gray-100 overflow-x-auto"><code className={className} {...props}>
-            {children}
-          </code></pre>
-        </div>
-      ) : (
-        <code className={className} {...props}>
-          {children}
-        </code>
-      )
-    }
-  };
+ // Use the shared markdown configuration
+ const markdownComponents = markdownComponentsConfig;
 
   // Render quiz based on type
     // ... (renderQuiz implementation remains unchanged)
@@ -201,12 +241,16 @@ const renderQuiz = (
 }
 
 
+/**
+ * Displays the content of a lesson, including Markdown text and interactive quizzes.
+ * Handles navigation between lesson sections and quizzes via simulated chat messages.
+ */
 export default function LessonContent({
-    lesson,
-    allLessons,
-    currentQuizIdToShow,
-    onSimulateUserMessage, // Use new prop
-    onLessonComplete
+	lesson,
+	allLessons,
+	currentQuizIdToShow,
+	onSimulateUserMessage,
+	onLessonComplete, // Keep prop, but functionality might be handled by chat now
 }: LessonContentProps) {
 
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
@@ -228,38 +272,48 @@ export default function LessonContent({
   const isLastQuiz = currentQuizIndex !== -1 && currentQuizIndex === quizzes.length - 1;
   const hasQuizzes = quizzes.length > 0;
 
-  // Determine Next Button Logic
-  let nextButtonText = "";
-  let nextButtonAction: (() => void) | null = null;
-  let simulateMessage = ""; // Message to simulate
 
-  if (!quizToShow) { // Viewing lesson overview
-      if (hasQuizzes) {
-          // Lesson has quizzes -> "Start First Activity"
-          nextButtonText = "Start First Activity";
-          simulateMessage = "next activity"; // Or "start quiz"
-          nextButtonAction = () => onSimulateUserMessage(simulateMessage);
-      } else {
-          // Lesson does NOT have quizzes
-          if (lesson.nextLesson) {
-              // No quizzes AND there is a next lesson -> "Next Lesson"
-              nextButtonText = "Next Lesson";
-              simulateMessage = "next lesson";
-              nextButtonAction = () => onSimulateUserMessage(simulateMessage);
-          }
-          // If no quizzes AND no next lesson, nextButtonAction remains null, button doesn't render.
-      }
-  } else { // Viewing a quiz
-      if (!isLastQuiz) {
-          nextButtonText = "Next Activity";
-          simulateMessage = "next activity"; // Or "next quiz"
-          nextButtonAction = () => onSimulateUserMessage(simulateMessage);
-      } else if (lesson.nextLesson) {
-          nextButtonText = `Next Lesson: ${allLessons.find((l) => l.id === lesson.nextLesson)?.title || ''}`;
-          simulateMessage = "next lesson";
-          nextButtonAction = () => onSimulateUserMessage(simulateMessage);
-      }
-  }
+
+	/**
+	 * Determines the text and action for the 'Next' button based on the current state.
+	 * @returns An object containing the button text and the action handler, or nulls if the button shouldn't be shown.
+	 */
+	const useNextButtonProps = useCallback(() => {
+		let text: string | null = null;
+		let action: (() => void) | null = null;
+		let simulateMessage = "";
+
+		if (!quizToShow) {
+			// Viewing lesson overview
+			if (hasQuizzes) {
+				text = "Start First Activity";
+				simulateMessage = "next activity";
+				action = () => onSimulateUserMessage(simulateMessage);
+			} else if (lesson.nextLesson) {
+				// No quizzes, but there is a next lesson
+				text = "Next Lesson";
+				simulateMessage = "next lesson";
+				action = () => onSimulateUserMessage(simulateMessage);
+			}
+		} else {
+			// Viewing a quiz
+			if (!isLastQuiz) {
+				text = "Next Activity";
+				simulateMessage = "next activity";
+				action = () => onSimulateUserMessage(simulateMessage);
+			} else if (lesson.nextLesson) {
+				// Last quiz, and there is a next lesson
+				const nextLessonTitle = allLessons.find((l) => l.id === lesson.nextLesson)?.title || '';
+				text = `Next Lesson: ${nextLessonTitle}`;
+				simulateMessage = "next lesson";
+				action = () => onSimulateUserMessage(simulateMessage);
+			}
+		}
+
+		return { text, action };
+	}, [quizToShow, hasQuizzes, isLastQuiz, lesson.nextLesson, allLessons, onSimulateUserMessage]);
+
+	const nextButtonProps = useNextButtonProps();
 
 
   return (
@@ -275,47 +329,15 @@ export default function LessonContent({
         renderQuiz(quizToShow, selectedAnswer, setSelectedAnswer, listAnswers, setListAnswers, tableAnswers, setTableAnswers, expansionAnswers, setExpansionAnswers) // Pass all quiz states
       ) : lesson.contentMarkdown ? (
         // If no quiz, render the main lesson Markdown content
-        <div className="prose prose-indigo max-w-none dark:prose-invert">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-              // Handle custom image placeholder syntax: ![Alt text](placeholder:description)
-              img: ({ node, ...props }) => {
-                if (props.src?.startsWith('placeholder:')) {
-                  const description = props.src.substring('placeholder:'.length);
-                  return (
-                    <span className="block text-center p-4 border border-dashed border-gray-400 rounded my-4 bg-gray-50 dark:bg-gray-800">
-                      🖼️ Image Placeholder: {props.alt || description || 'No description provided'}
-                    </span>
-                  );
-                }
-                // eslint-disable-next-line @next/next/no-img-element
-                return <img {...props} alt={props.alt || ''} />; // Default rendering for other images
-              },
-              // Optional: Add custom styling or handling for other elements like code blocks
-              code({ node, inline, className, children, ...props }: { node?: any; inline?: boolean; className?: string; children?: React.ReactNode }) { // Define type inline
-                const match = /language-(\w+)/.exec(className || '')
-                return !inline && match ? (
-                  <div className="my-4 rounded bg-gray-900 dark:bg-black overflow-hidden">
-                    <div className="px-4 py-1 bg-gray-700 dark:bg-gray-800 text-xs text-gray-300 font-mono flex justify-between items-center">
-                      <span>{match[1]}</span>
-                      {/* Add copy button? */}
-                    </div>
-                    <pre className="p-4 text-sm text-gray-100 overflow-x-auto"><code className={className} {...props}>
-                      {children}
-                    </code></pre>
-                  </div>
-                ) : (
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
-                )
-              }
-            }}
-          >
-            {lesson.contentMarkdown}
-          </ReactMarkdown>
-        </div>
+  // If no quiz, render the main lesson Markdown content using shared config
+  <div className="prose prose-indigo max-w-none dark:prose-invert">
+   <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    components={markdownComponentsConfig} // Use shared config
+   >
+    {lesson.contentMarkdown}
+   </ReactMarkdown>
+  </div>
       ) : (
         // Fallback: If no content at all (neither quiz nor lesson markdown)
         <p className="text-gray-500 italic">No content available for this section.</p>
@@ -338,13 +360,14 @@ export default function LessonContent({
         )}
 
         {/* Next Button with Context-Aware Logic */}
-        {nextButtonAction && (
-          <button
-            onClick={nextButtonAction}
-            className="inline-block px-6 py-2 bg-primary text-white rounded hover:bg-primary-dark transition-colors"
-          >
-            {nextButtonText} &raquo;
-          </button>
+  {/* Use props from the hook */}
+  {nextButtonProps.action && nextButtonProps.text && (
+   <button
+    onClick={nextButtonProps.action}
+    className="inline-block px-6 py-2 bg-primary text-white rounded hover:bg-primary-dark transition-colors"
+   >
+    {nextButtonProps.text} &raquo;
+   </button>
         )}
       </div>
     </div>

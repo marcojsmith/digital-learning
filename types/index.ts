@@ -1,4 +1,8 @@
 // --- Quiz/Activity Types ---
+/**
+ * Represents a single item within a lesson quiz or activity.
+ * Structure varies depending on the quiz type (list, table, expansions).
+ */
 export interface LessonQuizItem {
   letter: string;
   question?: string;
@@ -13,6 +17,10 @@ export interface LessonQuizItem {
   units?: string;
 }
 
+/**
+ * Defines the structure for quizzes or activities associated with a lesson.
+ * Supports different formats like lists, tables, expansions, and multiple-choice.
+ */
 export interface LessonQuiz {
   id: string; // e.g., "quiz1", "activity2"
   title: string;
@@ -27,47 +35,67 @@ export interface LessonQuiz {
 }
 
 // --- Main Lesson Type ---
+/**
+ * Represents a single learning lesson.
+ * Contains content, associated concepts, subject, progress, and related quizzes.
+ */
 export interface Lesson {
-  id: string // e.g., "lesson1"
+  id: string; // e.g., "lesson1"
   lessonId?: string; // Restored as optional, as components might reference it
-  title: string
-  contentMarkdown: string // Renamed from 'description', expects Markdown
-  concepts: string[] // Added concepts
-  subject: string
-  progress: "completed" | "in-progress" | "not-started"
-  quizzes: LessonQuiz[] // Replaced single 'quiz' with array
-  nextLesson?: string
-  prevLesson?: string
+  title: string;
+  contentMarkdown: string; // Renamed from 'description', expects Markdown
+  concepts: string[]; // Added concepts
+  subject: string;
+  progress: "completed" | "in-progress" | "not-started";
+  quizzes: LessonQuiz[]; // Replaced single 'quiz' with array
+  nextLesson?: string;
+  prevLesson?: string;
 }
 
 // --- Added LessonDatabase Type ---
+/**
+ * Represents the structure of the entire lesson database,
+ * typically mapping lesson IDs to Lesson objects.
+ */
 export interface LessonDatabase {
   [key: string]: Lesson;
 }
 
 // --- Subject Type ---
+/**
+ * Represents a subject area containing multiple lessons.
+ */
 export interface Subject {
-  id: string
-  name: string
-  icon: string
-  lessons: string[] // Lesson IDs
+  id: string;
+  name: string;
+  icon: string;
+  lessons: string[]; // Lesson IDs
 }
 
 // --- User Type ---
+/**
+ * Represents a user of the application (simplified).
+ */
 export interface User {
-  name: string
-  avatar: string
+  name: string;
+  avatar: string;
 }
 
 // --- Chat Related Types ---
+/**
+ * Represents a single message in the chat interface.
+ */
 export interface ChatMessage {
-  text: string
+  text: string;
   type: "user" | "ai" | "typing";
   isInappropriate?: boolean; // Flag for potentially inappropriate user messages
 }
 
 // Added ChatAction Type
 // Define the possible action types based on the new flattened structure
+/**
+ * Defines the possible action types the AI can request the frontend to perform.
+ */
 export type ActionType =
   | "showLessonOverview"
   | "showQuiz"
@@ -79,6 +107,9 @@ export type ActionType =
   | null; // Added null based on LLMResponse definition
 
 // Updated ChatAction interface reflecting the flattened structure
+/**
+ * Represents an action requested by the AI, including the type and necessary payload.
+ */
 export interface ChatAction {
   actionType: ActionType;
   lessonId?: string | null; // Corresponds to old payload.lessonId
@@ -88,6 +119,9 @@ export interface ChatAction {
 }
 
 // Added StudentProfile Type (assuming it might be needed globally)
+/**
+ * Represents the profile of the student interacting with the learning assistant.
+ */
 export interface StudentProfile {
   name: string;
   grade: number;
@@ -97,6 +131,10 @@ export interface StudentProfile {
 }
 
 // Added LlmContext Type
+/**
+ * Represents the contextual information provided to the LLM for generating responses.
+ * Includes student profile, current lesson/quiz state, history, and concept tracking.
+ */
 export interface LlmContext {
   studentProfile: StudentProfile | null;
   currentLesson: { id: string; data: Lesson; startTime: Date; progressPercentage: number } | null;

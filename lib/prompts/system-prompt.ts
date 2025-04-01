@@ -1,17 +1,28 @@
 // lib/prompts/system-prompt.ts
 import type { LlmContext, Lesson, LessonQuiz } from '@/types'; // Use Lesson type and import LessonQuiz
 
-// Define a type for the context expected by the USER_PROMPT template
-// This might need adjustment based on the actual structure passed in route.ts
+/**
+ * @interface PromptContext
+ * Defines the structure of the dynamic context data injected into the user prompt template.
+ * This context provides the LLM with necessary information about the current learning state.
+ */
 interface PromptContext {
+  /** The current state maintained by the Learning Assistant Context. */
   currentLlmContext: LlmContext;
+  /** A map of available lesson IDs to their titles. */
   availableLessons: Record<string, string>;
-  currentLessonData: Lesson | null; // Corrected type name
+  /** Detailed data for the currently active lesson, if any. */
+  currentLessonData: Lesson | null;
 }
 
 // ========================================================================
 // System Prompt (Core Instructions & Format Definition)
 // ========================================================================
+/**
+ * @constant SYSTEM_PROMPT
+ * The core instructions provided to the LLM, defining its role, response format,
+ * rules, and capabilities (like lesson generation). This prompt remains static.
+ */
 export const SYSTEM_PROMPT = `You are an AI tutor. Respond using EXACTLY this JSON format:
 {
   "responseText": "Your conversational response text.",
@@ -64,7 +75,16 @@ Learning Workflow & Navigation:
 // ========================================================================
 // User Prompt Template (Injects Dynamic Context)
 // ========================================================================
-export const USER_PROMPT = (context: PromptContext, currentUserMessage: string): string => {
+/**
+ * Generates the user-specific part of the prompt, injecting dynamic context.
+ * This function takes the current session context and the user's latest message
+ * and formats them to be appended to the SYSTEM_PROMPT.
+ *
+ * @param context - The dynamic context containing current learning state, available lessons, etc.
+ * @param currentUserMessage - The raw text of the user's most recent message.
+ * @returns A formatted string containing the context and user message, ready for the LLM.
+ */
+export const generateUserPrompt = (context: PromptContext, currentUserMessage: string): string => {
   // Selectively stringify context to avoid excessive length and potentially sensitive data
   const relevantContext = {
     studentProfile: context.currentLlmContext.studentProfile, // Keep profile brief if possible
