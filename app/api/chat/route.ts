@@ -86,7 +86,7 @@ const generationConfig: GenerationConfig = { // Explicitly type the config
   temperature: 0.1, // Adjust for creativity vs consistency
   topP: 0.95,
   topK: 40,
-  maxOutputTokens: 1000, // Reduced token limit as requested
+  maxOutputTokens: 2000, // Reduced token limit as requested
   responseMimeType: "application/json",
   responseSchema: { // Updated flat schema per PLAN_llm_response_formatting.md
     type: SchemaType.OBJECT,
@@ -193,28 +193,24 @@ export async function POST(request: Request) {
     // We only need to send the current user message now, plus essential context for this turn
     const messagePayload = {
         currentUserMessage,
-        availableLessons, // Provide available lessons for context
-        currentLessonData // Provide current lesson data if available
+        // Provide the full map of available lessons {id: title} for the LLM
+        availableLessons: availableLessons,
+        // Provide pruned essential lesson details, not the full object
+        currentLessonDetails: currentLessonData ? {
+            id: currentLessonData.id,
+            title: currentLessonData.title,
+            prevLesson: currentLessonData.prevLesson,
+            nextLesson: currentLessonData.nextLesson
+        } : undefined,
+        // Add current lesson ID for relative navigation context
+        currentLesson: currentLlmContext.currentLesson ? { id: currentLlmContext.currentLesson.id } : undefined
         // Note: The rest of the context (student profile, history) is in chatHistory
     };
     // We send the payload as a JSON string within the message part, mimicking the input/output structure
     const messageText = `input: ${JSON.stringify(messagePayload)}`;
-    // Define the format reminder to include in each message
-    const formatReminder = `\n\n**REMINDER:** Your response MUST be a single, valid JSON object matching this structure:
-\`\`\`json
-{
-  "responseText": "string | null",
-  "action": { "type": "string", "payload": { "lessonId": "string | null", "quizId": "string | null" } } | null,
-  "reasoning": "string | null",
-  "contextUpdates": { /* ... */ } | null,
-  "flagsPreviousMessageAsInappropriate": boolean | null
-}
-\`\`\`
-Ensure ALL fields are present, using null where appropriate. Payloads are MANDATORY for showLessonOverview, showQuiz, completeLesson.`;
 
     const messageToSend: Part[] = [
         { text: messageText },
-        { text: formatReminder }, // Insert the reminder
         { text: "\noutput: " } // Add newline before output marker
     ];
 

@@ -1,11 +1,14 @@
 "use client"
+import React from 'react';
+import { useState, useEffect } from "react";
 
-import type React from "react"
 import ReactMarkdown, { type Components } from 'react-markdown'
 // Removed unstable import: import { type CodeProps } from 'react-markdown/lib/ast-to-react'
 import remarkGfm from 'remark-gfm'
 import type { Lesson, LessonQuiz, LessonQuizItem } from "@/types" // Added LessonQuizItem
-
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input"; // Added Input import
 interface LessonContentProps {
   lesson: Lesson
   allLessons: Lesson[] // Keep for nav titles
@@ -16,7 +19,17 @@ interface LessonContentProps {
 }
 
 // Helper Function to Render Specific Quiz (updated for Markdown)
-const renderQuiz = (quiz: LessonQuiz) => {
+const renderQuiz = (
+  quiz: LessonQuiz,
+  selectedAnswer: string | null,
+  setSelectedAnswer: (value: string | null) => void,
+  listAnswers: { [key: string]: string },
+  setListAnswers: (answers: { [key: string]: string }) => void,
+  tableAnswers: { [key: string]: string },
+  setTableAnswers: (answers: { [key: string]: string }) => void,
+  expansionAnswers: { [key: string]: string }, // Added expansionAnswers state
+  setExpansionAnswers: (answers: { [key: string]: string }) => void // Added setter for expansionAnswers
+) => {
   // Common Markdown components configuration
   const markdownComponents: Components = { // Add Components type
     // Handle custom image placeholder syntax: ![Alt text](placeholder:description)
@@ -63,7 +76,13 @@ const renderQuiz = (quiz: LessonQuiz) => {
                     {quiz.items.map(item => (
                         <li key={item.letter}>
                             {item.question ? <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{item.question}</ReactMarkdown> : null}
-                            <span className="inline-block border-b border-gray-400 min-w-[80px] ml-2"></span>
+                            <Input
+                              type="text"
+                              value={listAnswers[item.letter] || ''}
+                              onChange={(e) => setListAnswers({ ...listAnswers, [item.letter]: e.target.value })}
+                              className="inline-block ml-2 w-auto min-w-[100px] border-gray-400" // Use Input component
+                              placeholder="Your answer"
+                            />
                         </li>
                     ))}
                 </ol>
@@ -83,11 +102,26 @@ const renderQuiz = (quiz: LessonQuiz) => {
                                 <tr key={row.letter}>
                                     <td className="border border-medium-gray p-2">{row.letter}</td>
                                     <td className="border border-medium-gray p-2">{row.number}</td>
-                                    <td className="border border-medium-gray p-2">{row.tenThousands ?? <span className="inline-block border-b border-gray-400 w-8"></span>}</td>
-                                    <td className="border border-medium-gray p-2">{row.thousands ?? <span className="inline-block border-b border-gray-400 w-8"></span>}</td>
-                                    <td className="border border-medium-gray p-2">{row.hundreds ?? <span className="inline-block border-b border-gray-400 w-8"></span>}</td>
-                                    <td className="border border-medium-gray p-2">{row.tens ?? <span className="inline-block border-b border-gray-400 w-8"></span>}</td>
-                                    <td className="border border-medium-gray p-2">{row.units ?? <span className="inline-block border-b border-gray-400 w-8"></span>}</td>
+                                    {/* Render Input or value for each place value column */}
+                                    {['tenThousands', 'thousands', 'hundreds', 'tens', 'units'].map(placeValue => {
+                                        const cellKey = `${row.letter}-${placeValue}`;
+                                        const value = (row as any)[placeValue]; // Type assertion needed if row type isn't specific enough
+                                        return (
+                                            <td key={cellKey} className="border border-medium-gray p-1">
+                                                {value != null ? ( // Check for null or undefined
+                                                    value
+                                                ) : (
+                                                    <Input
+                                                        type="text"
+                                                        value={tableAnswers[cellKey] || ''}
+                                                        onChange={(e) => setTableAnswers({ ...tableAnswers, [cellKey]: e.target.value })}
+                                                        className="w-full h-full text-center border-none focus:ring-0 p-1 text-sm" // Adjusted styling
+                                                        placeholder="" // Keep placeholder minimal or empty
+                                                    />
+                                                )}
+                                            </td>
+                                        );
+                                    })}
                                 </tr>
                             ))}
                         </tbody>
@@ -95,24 +129,71 @@ const renderQuiz = (quiz: LessonQuiz) => {
                  </div>
             )}
             {quiz.type === "expansions" && quiz.items && (
-                 <ol className="list-decimal list-inside space-y-2">
-                    {quiz.items.map(item => (
-                        <li key={item.letter}>
-                            {item.number} = {item.isExample ? item.expansion : <span className="inline-block border-b border-gray-400 min-w-[200px] ml-2"></span>}
-                        </li>
-                    ))}
+                 <ol className="list-decimal list-inside space-y-4"> {/* Increased spacing */}
+                    {quiz.items.map(item => {
+                        const placeValues = ['thousands', 'hundreds', 'tens', 'ones'].filter(pv => (item as any)[pv] === null || (item as any)[pv] === undefined); // Determine which inputs are needed
+
+                        return (
+                            <li key={item.letter} className="flex items-center space-x-1"> {/* Use flex for alignment */}
+                                <span>{item.number} = </span>
+                                {item.isExample ? (
+                                    <span className="ml-1 font-mono">{item.expansion}</span>
+                                ) : (
+                                    <div className="flex items-center space-x-1 ml-1">
+                                        {/* Render inputs dynamically based on available null place values */}
+                                        {placeValues.map((placeValue, index) => {
+                                            const inputKey = `${item.letter}-${placeValue}`;
+                                            return (
+                                                <React.Fragment key={inputKey}>
+                                                    {index > 0 && <span className="text-gray-500">+</span>}
+                                                    <Input
+                                                        type="text" // Use text initially, consider number later if needed
+                                                        pattern="[0-9]*" // Allow only numbers
+                                                        inputMode="numeric" // Hint for mobile keyboards
+                                                        value={expansionAnswers[inputKey] || ''}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value.replace(/[^0-9]/g, ''); // Ensure only numbers are stored
+                                                            setExpansionAnswers({ ...expansionAnswers, [inputKey]: value });
+                                                        }}
+                                                        className="w-16 h-8 text-center border-gray-400 px-1 text-sm" // Compact styling
+                                                        placeholder={placeValue.charAt(0).toUpperCase()} // Placeholder like T, H, T, O
+                                                    />
+                                                </React.Fragment>
+                                            );
+                                        })}
+                                        {/* Add logic here if the structure is different, e.g., a single expansion input */}
+                                        {placeValues.length === 0 && !item.isExample && (
+                                            // Fallback if no specific place values are null but it's not an example
+                                            // This might indicate a different structure or a single input field needed
+                                            <Input
+                                                type="text"
+                                                value={expansionAnswers[`${item.letter}-full`] || ''}
+                                                onChange={(e) => setExpansionAnswers({ ...expansionAnswers, [`${item.letter}-full`]: e.target.value })}
+                                                className="w-32 h-8 border-gray-400 px-1 text-sm ml-1"
+                                                placeholder="Expansion"
+                                            />
+                                        )}
+                                    </div>
+                                )}
+                            </li>
+                        );
+                    })}
                 </ol>
             )}
             {quiz.type === "multiple-choice" && quiz.question && quiz.options && (
                  <div>
                     {quiz.question && <div className="mb-3 prose prose-indigo max-w-none dark:prose-invert"><ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>{quiz.question}</ReactMarkdown></div>}
-                    <ul className="list-none p-0 mb-5">
-                       {quiz.options.map((option, index) => (
-                         <li key={index} className="block p-3 my-2 bg-white rounded border border-medium-gray cursor-not-allowed opacity-70">
-                            {option.text}
-                         </li>
-                       ))}
-                    </ul>
+                    <RadioGroup value={selectedAnswer ?? undefined} onValueChange={setSelectedAnswer} className="space-y-2">
+                      {quiz.options.map((option, index) => {
+                        const optionId = `${quiz.id}-option-${index}`;
+                        return (
+                          <div key={optionId} className="flex items-center space-x-2 p-3 bg-white rounded border border-medium-gray hover:bg-gray-50 cursor-pointer">
+                            <RadioGroupItem value={optionId} id={optionId} />
+                            <Label htmlFor={optionId} className="flex-1 cursor-pointer">{option.text}</Label>
+                          </div>
+                        );
+                      })}
+                    </RadioGroup>
                  </div>
             )}
         </div>
@@ -128,7 +209,20 @@ export default function LessonContent({
     onLessonComplete
 }: LessonContentProps) {
 
+  const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [listAnswers, setListAnswers] = useState<{ [key: string]: string }>({}); // State for list answers
+  const [tableAnswers, setTableAnswers] = useState<{ [key: string]: string }>({}); // State for table answers
+  const [expansionAnswers, setExpansionAnswers] = useState<{ [key: string]: string }>({}); // State for expansion answers
   const quizzes = lesson.quizzes || [];
+
+  // Reset selection when quiz changes
+  useEffect(() => {
+    setSelectedAnswer(null);
+    setListAnswers({});
+    setTableAnswers({});
+    setExpansionAnswers({}); // Reset expansion answers when quiz changes
+  }, [currentQuizIdToShow]);
+
   const currentQuizIndex = currentQuizIdToShow ? quizzes.findIndex(q => q.id === currentQuizIdToShow) : -1;
   const quizToShow = currentQuizIndex !== -1 ? quizzes[currentQuizIndex] : null;
   const isLastQuiz = currentQuizIndex !== -1 && currentQuizIndex === quizzes.length - 1;
@@ -141,13 +235,19 @@ export default function LessonContent({
 
   if (!quizToShow) { // Viewing lesson overview
       if (hasQuizzes) {
+          // Lesson has quizzes -> "Start First Activity"
           nextButtonText = "Start First Activity";
           simulateMessage = "next activity"; // Or "start quiz"
           nextButtonAction = () => onSimulateUserMessage(simulateMessage);
-      } else if (lesson.nextLesson) {
-          nextButtonText = `Next Lesson: ${allLessons.find((l) => l.id === lesson.nextLesson)?.title || ''}`;
-          simulateMessage = "next lesson";
-          nextButtonAction = () => onSimulateUserMessage(simulateMessage);
+      } else {
+          // Lesson does NOT have quizzes
+          if (lesson.nextLesson) {
+              // No quizzes AND there is a next lesson -> "Next Lesson"
+              nextButtonText = "Next Lesson";
+              simulateMessage = "next lesson";
+              nextButtonAction = () => onSimulateUserMessage(simulateMessage);
+          }
+          // If no quizzes AND no next lesson, nextButtonAction remains null, button doesn't render.
       }
   } else { // Viewing a quiz
       if (!isLastQuiz) {
@@ -172,7 +272,7 @@ export default function LessonContent({
       {/* --- Content Rendering Logic --- */}
       {quizToShow ? (
         // If a quiz is active, render the quiz
-        renderQuiz(quizToShow)
+        renderQuiz(quizToShow, selectedAnswer, setSelectedAnswer, listAnswers, setListAnswers, tableAnswers, setTableAnswers, expansionAnswers, setExpansionAnswers) // Pass all quiz states
       ) : lesson.contentMarkdown ? (
         // If no quiz, render the main lesson Markdown content
         <div className="prose prose-indigo max-w-none dark:prose-invert">

@@ -19,6 +19,7 @@ interface ChatProps {
   onAction: (action: ChatAction) => void;
   simulatedMessage: { text: string; id: number } | null;
   onSimulatedMessageProcessed: () => void;
+  activeLessonId: string | null; // ID of the lesson currently displayed in the main view
 }
 
 interface LlmResponse {
@@ -38,7 +39,7 @@ interface LlmApiResponse {
 }
 
 
-export default function Chat({ onAction, simulatedMessage, onSimulatedMessageProcessed }: ChatProps) {
+export default function Chat({ onAction, simulatedMessage, onSimulatedMessageProcessed, activeLessonId }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { text: "Hello! I'm your math tutor. I can help you learn about numbers, operations, and more. What would you like to learn today?", type: "ai" },
   ])
@@ -167,10 +168,25 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
         // Get currentLessonData if a lesson is active
         const currentLessonData = llmContext.currentLesson?.id ? chatDb?.[llmContext.currentLesson.id] : null;
 
+        // --- START: Add logic for immediateNextStep ---
+        // Determine the immediate next step, prioritizing the first quiz after a lesson overview
+        let immediateNextStep: { type: string; id: string } | null = null;
+        if (
+            !llmContext.currentQuiz && // User is on lesson overview (not in a quiz)
+            currentLessonData &&       // Current lesson data is available
+            currentLessonData.quizzes && // The lesson has quizzes defined
+            currentLessonData.quizzes.length > 0 // There is at least one quiz
+        ) {
+            // Set the immediate next step to the first quiz of the current lesson
+            immediateNextStep = { type: 'quiz', id: currentLessonData.quizzes[0].id };
+            logger.debug("Setting immediateNextStep to first quiz", { component: 'Chat', lessonId: currentLessonData.id, quizId: immediateNextStep.id });
+        }
+        // --- END: Add logic for immediateNextStep ---
+
         // Prepare serializable context for the API
         const serializableLlmContext = {
             studentProfile: llmContext.studentProfile,
-            currentLesson: llmContext.currentLesson ? { id: llmContext.currentLesson.id } : null,
+            currentLesson: activeLessonId ? { id: activeLessonId } : null, // Use the prop for current lesson context
             currentQuiz: llmContext.currentQuiz ? { id: llmContext.currentQuiz.id } : null,
             conceptsIntroduced: Array.from(llmContext.conceptsIntroduced),
             conceptsMastered: Array.from(llmContext.conceptsMastered),
@@ -189,7 +205,8 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
                 currentUserMessage: messageText,
                 currentLlmContext: serializableLlmContext,
                 availableLessons: availableLessons,
-                currentLessonData: currentLessonData // Send full data if available
+                currentLessonData: currentLessonData, // Send full data if available
+                immediateNextStep: immediateNextStep // Explicitly guide LLM towards quiz if applicable
             }),
         });
 
@@ -343,7 +360,7 @@ export default function Chat({ onAction, simulatedMessage, onSimulatedMessagePro
     setIsProcessing(false);
     // --- End Processing API Results ---
 
-  }, [isProcessing, chatDb, llmContext, onAction, setCurrentLesson, setCurrentQuiz]); // Dependencies for useCallback
+  }, [isProcessing, chatDb, llmContext, onAction, setCurrentLesson, setCurrentQuiz, activeLessonId]); // Added activeLessonId dependency
 
   // ========================================================================
   // Handle Actual User Input Submission

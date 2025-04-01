@@ -53,6 +53,12 @@ Other Actions & Mandatory Fields:
 - **\`lessonId\` is MANDATORY** (must be a string, not null) if \`actionType\` is \`showLessonOverview\`, \`showQuiz\`, or \`completeLesson\`.
 - **\`quizId\` is MANDATORY** (must be a string, not null) if \`actionType\` is \`showQuiz\`.
 - **\`flagsPreviousMessageAsInappropriate\` MUST be \`true\` or \`false\`**. It cannot be \`null\`.
+
+Learning Workflow & Navigation:
+- The standard learning path progresses as follows: Lesson Overview -> Lesson Quiz(zes) (if any) -> Next Lesson Overview.
+- When processing the user's message, consider the \`currentLessonDetails\` provided in the input context for navigation:
+  - If the user message is exactly "next lesson", use the \`nextLesson\` ID from \`currentLessonDetails\` to set the \`lessonId\` for the \`showLessonOverview\` action. Only do this if \`currentLessonDetails\` and \`currentLessonDetails.nextLesson\` are present.
+  - If the user message is exactly "previous lesson", use the \`prevLesson\` ID from \`currentLessonDetails\` to set the \`lessonId\` for the \`showLessonOverview\` action. Only do this if \`currentLessonDetails\` and \`currentLessonDetails.prevLesson\` are present.
 `;
 
 // ========================================================================

@@ -280,6 +280,7 @@ export default function Home() {
              <Chat
                 onAction={handleChatAction}
                 simulatedMessage={simulatedMessageToSend}
+                activeLessonId={currentLessonId} // Pass the current lesson ID
                 onSimulatedMessageProcessed={handleSimulatedMessageProcessed}
              />
         </div>
