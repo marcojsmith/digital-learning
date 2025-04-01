@@ -68,8 +68,8 @@ function buildChatHistory(systemPrompt: string, interactions: LlmContext['recent
             lessonId: interaction.ai_response.lessonId,
             quizId: interaction.ai_response.quizId,
             flagsPreviousMessageAsInappropriate: interaction.ai_response.flagsPreviousMessageAsInappropriate,
-            reasoning: interaction.ai_response.reasoning
-            // lessonMarkdownContent is typically only in the *current* response, not history
+            reasoning: interaction.ai_response.reasoning,
+            // lessonMarkdownContent and generatedQuizData are typically only in the *current* response, not history
           })
         };
         history.push({ role: "model", parts: [modelResponsePart] });
@@ -100,23 +100,86 @@ const model = genAI?.getGenerativeModel({ model: llmModelName });
  * @type {GenerationConfig}
  */
 const generationConfig: GenerationConfig = {
-  temperature: 0.1, // Lower temperature for more deterministic, less creative responses
-  topP: 0.95,
-  topK: 40,
-  maxOutputTokens: 2000, // Maximum tokens allowed in the response
+  temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.1'), // Lower temperature for more deterministic, less creative responses
+  topP: parseFloat(process.env.LLM_TOP_P || '0.95'),
+  topK: parseInt(process.env.LLM_TOP_K || '40', 10),
+  maxOutputTokens: parseInt(process.env.LLM_MAX_OUTPUT_TOKENS || '1000', 10), // Maximum tokens allowed in the response
   responseMimeType: "application/json", // Expect a JSON response
   responseSchema: { // Define the expected flat JSON structure
     type: SchemaType.OBJECT,
     properties: {
       responseText: { type: SchemaType.STRING }, // Required text response
-      actionType: { type: SchemaType.STRING, nullable: true }, // e.g., "showQuiz", "showLessonOverview", null
-      lessonId: { type: SchemaType.STRING, nullable: true }, // ID for lesson context
-      quizId: { type: SchemaType.STRING, nullable: true }, // ID for quiz context
-      lessonMarkdownContent: { type: SchemaType.STRING, nullable: true }, // Optional Markdown for generated lessons
-      flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN }, // Required boolean flag
-      reasoning: { type: SchemaType.STRING, nullable: true } // Optional explanation from the AI
+      actionType: { type: SchemaType.STRING, nullable: true }, // e.g., "showQuiz", "generateQuiz", null
+      lessonId: { type: SchemaType.STRING, nullable: true },
+      quizId: { type: SchemaType.STRING, nullable: true },
+      lessonMarkdownContent: { type: SchemaType.STRING, nullable: true },
+      generatedQuizData: { // Added for quiz generation
+        type: SchemaType.ARRAY,
+        nullable: true,
+        items: { // Define the structure of objects within the array (LessonQuiz)
+          type: SchemaType.OBJECT,
+          properties: {
+            id: { type: SchemaType.STRING },
+            title: { type: SchemaType.STRING },
+            type: { type: SchemaType.STRING }, // Removed enum, rely on prompt/validation
+            concepts: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+            question: { type: SchemaType.STRING, nullable: true },
+            options: { // For multiple-choice
+              type: SchemaType.ARRAY,
+              nullable: true,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                  text: { type: SchemaType.STRING },
+                  correct: { type: SchemaType.BOOLEAN }
+                },
+                required: ["text", "correct"]
+              }
+            },
+            headers: { // For table
+              type: SchemaType.ARRAY,
+              nullable: true,
+              items: { type: SchemaType.STRING }
+            },
+            items: { // For list/expansions (LessonQuizItem structure)
+              type: SchemaType.ARRAY,
+              nullable: true,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: { // Simplified LessonQuizItem for schema validation
+                  letter: { type: SchemaType.STRING },
+                  question: { type: SchemaType.STRING, nullable: true },
+                  answer: { type: SchemaType.STRING, nullable: true },
+                  number: { type: SchemaType.STRING, nullable: true },
+                  expansion: { type: SchemaType.STRING, nullable: true },
+                  isExample: { type: SchemaType.BOOLEAN, nullable: true },
+                  // Place value fields omitted for brevity in schema, rely on prompt
+                },
+                required: ["letter"]
+              }
+            },
+            rows: { // For table (LessonQuizItem structure)
+              type: SchemaType.ARRAY,
+              nullable: true,
+              items: {
+                type: SchemaType.OBJECT,
+                properties: { // Simplified LessonQuizItem for schema validation
+                  letter: { type: SchemaType.STRING },
+                  question: { type: SchemaType.STRING, nullable: true },
+                  answer: { type: SchemaType.STRING, nullable: true },
+                  // Other LessonQuizItem fields omitted for brevity
+                },
+                required: ["letter"]
+              }
+            }
+          },
+          required: ["id", "title", "type", "concepts"]
+        }
+      },
+      flagsPreviousMessageAsInappropriate: { type: SchemaType.BOOLEAN },
+      reasoning: { type: SchemaType.STRING, nullable: true }
     },
-    required: ["responseText", "flagsPreviousMessageAsInappropriate"] // Fields that MUST be present
+    required: ["responseText", "flagsPreviousMessageAsInappropriate"]
   },
 };
 
@@ -299,6 +362,18 @@ export async function POST(request: Request): Promise<NextResponse> {
 
         parsedResponse = JSON.parse(jsonToParse);
         reqLogger.info("Successfully parsed Gemini JSON response (v_new).", { response_format: 'v_new' });
+        // Clean up potential LLM prefix and duplicate title in lesson content
+        if (parsedResponse.lessonMarkdownContent && typeof parsedResponse.lessonMarkdownContent === 'string') {
+          const lines = parsedResponse.lessonMarkdownContent.split('\n');
+          // Check if there are at least two lines and they match the expected prefixes
+          if (lines.length >= 2 && lines[0].startsWith('Lesson generated-: Lesson:') && lines[1].startsWith('Lesson:')) {
+            // Remove the first two lines and join the rest
+            parsedResponse.lessonMarkdownContent = lines.slice(2).join('\n');
+            reqLogger.info("Cleaned up LLM lesson content prefix and duplicate title.");
+          }
+        }
+
+
         const tokenUsage = result.response?.usageMetadata?.totalTokenCount;
         reqLogger.logLlmResult(parsedResponse, tokenUsage);
 
@@ -316,8 +391,9 @@ export async function POST(request: Request): Promise<NextResponse> {
         if (parsedResponse.actionType) {
           const action = parsedResponse.actionType;
           const requiresLessonId = ['showQuiz', 'showLessonOverview', 'completeLesson', 'returnToLessonOverview'];
-          const requiresQuizId = ['showQuiz'];
+          const requiresQuizId = ['showQuiz', 'showPreviousQuiz', 'showNextQuiz']; // Added from types
           const requiresMarkdown = ['generateFullLesson'];
+          const requiresGeneratedQuiz = ['generateQuiz']; // Added
 
           if (requiresLessonId.includes(action) && (!parsedResponse.lessonId || typeof parsedResponse.lessonId !== 'string')) {
             reqLogger.error(`Validation Error: Action '${action}' requires a non-empty string 'lessonId'.`, { response: parsedResponse });
@@ -331,8 +407,32 @@ export async function POST(request: Request): Promise<NextResponse> {
             reqLogger.error(`Validation Error: Action '${action}' requires a non-empty string 'lessonMarkdownContent'.`, { response: parsedResponse });
             throw new Error(`LLM response action '${action}' missing or invalid 'lessonMarkdownContent'.`);
           }
+          if (requiresGeneratedQuiz.includes(action)) {
+            if (!parsedResponse.generatedQuizData || !Array.isArray(parsedResponse.generatedQuizData) || parsedResponse.generatedQuizData.length === 0) {
+              reqLogger.error(`Validation Error: Action '${action}' requires a non-empty array 'generatedQuizData'.`, { response: parsedResponse });
+              throw new Error(`LLM response action '${action}' missing or invalid 'generatedQuizData'.`);
+            }
+            // Basic check on the first item as a sanity check (optional)
+            const firstQuiz = parsedResponse.generatedQuizData[0];
+            if (!firstQuiz || typeof firstQuiz.id !== 'string' || typeof firstQuiz.title !== 'string' || typeof firstQuiz.type !== 'string') {
+               reqLogger.warn(`Validation Warning: First item in 'generatedQuizData' for action '${action}' seems malformed.`, { firstQuiz });
+               // Decide whether to throw an error or just warn
+               // throw new Error(`LLM response action '${action}' has malformed 'generatedQuizData'.`);
+            }
+          }
+
           // Log unhandled known actions if necessary, or just proceed
-          const knownActions = [...requiresLessonId, ...requiresQuizId, ...requiresMarkdown, 'clarifyQuestion'];
+          // Update knownActions to include all defined action types
+          const knownActions = [
+            ...requiresLessonId,
+            ...requiresQuizId,
+            ...requiresMarkdown,
+            ...requiresGeneratedQuiz,
+            'clarifyQuestion', // Add other known actions not covered by specific requirements
+            'returnToLessonOverview', // Added based on types/index.ts
+            'showPreviousQuiz', // Added based on types/index.ts
+            'showNextQuiz' // Added based on types/index.ts
+          ];
           if (!knownActions.includes(action)) {
              reqLogger.warn(`Received potentially unknown or unvalidated actionType: ${action}`, { response: parsedResponse });
           }

@@ -312,15 +312,14 @@ export default function LessonContent({
 
 		return { text, action };
 	}, [quizToShow, hasQuizzes, isLastQuiz, lesson.nextLesson, allLessons, onSimulateUserMessage]);
-
-	const nextButtonProps = useNextButtonProps();
+const nextButtonProps = useNextButtonProps();
 
 
   return (
     <div className="max-w-[850px] mx-auto bg-white rounded-lg p-7 shadow-md animate-fadeIn">
       <h2 className="text-primary-dark text-2xl font-semibold mb-6 pb-4 border-b border-medium-gray">
-        Lesson {lesson.id.replace("lesson", "")}: {lesson.title}
-        {quizToShow && <span className="text-lg font-normal text-gray-600"> - {quizToShow.title}</span>}
+        {lesson.title}
+        {quizToShow && <span className="text-lg font-normal text-gray-600">{quizToShow.title}</span>}
       </h2>
 
       {/* --- Content Rendering Logic --- */}
@@ -329,15 +328,22 @@ export default function LessonContent({
         renderQuiz(quizToShow, selectedAnswer, setSelectedAnswer, listAnswers, setListAnswers, tableAnswers, setTableAnswers, expansionAnswers, setExpansionAnswers) // Pass all quiz states
       ) : lesson.contentMarkdown ? (
         // If no quiz, render the main lesson Markdown content
-  // If no quiz, render the main lesson Markdown content using shared config
-  <div className="prose prose-indigo max-w-none dark:prose-invert">
-   <ReactMarkdown
-    remarkPlugins={[remarkGfm]}
-    components={markdownComponentsConfig} // Use shared config
-   >
-    {lesson.contentMarkdown}
-   </ReactMarkdown>
-  </div>
+        // Clean up potential LLM generation prefixes directly here
+        (() => {
+          const cleanupRegex = /^Lesson generated-: Lesson:.*\nLesson:.*\n/;
+          // We know lesson.contentMarkdown is a string here due to the conditional check
+          const markdownToRender = lesson.contentMarkdown.replace(cleanupRegex, '');
+          return (
+            <div className="prose prose-indigo max-w-none dark:prose-invert">
+             <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={markdownComponentsConfig} // Use shared config
+             >
+              {markdownToRender}
+             </ReactMarkdown>
+            </div>
+          );
+        })()
       ) : (
         // Fallback: If no content at all (neither quiz nor lesson markdown)
         <p className="text-gray-500 italic">No content available for this section.</p>

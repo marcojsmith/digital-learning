@@ -53,6 +53,7 @@ interface LlmResponse {
 	flagsPreviousMessageAsInappropriate?: boolean | null;
 	/** Optional reasoning provided by the LLM for its response or action. */
 	reasoning?: string;
+	generatedQuizData?: LessonQuiz[] | null; // Added for quiz generation
 }
 
 /**
@@ -364,8 +365,8 @@ export default function Chat({
 	const handleApiResponseActions = useCallback((llmResponse: LlmResponse | null) => {
 		if (!llmResponse?.actionType) return; // No action specified
 
-		const { actionType, lessonId, quizId, lessonMarkdownContent } = llmResponse;
-		logger.info(`Received action from API`, { component: 'Chat', actionType, lessonId, quizId });
+		const { actionType, lessonId, quizId, lessonMarkdownContent, generatedQuizData } = llmResponse; // Added generatedQuizData
+		logger.info(`Received action from API`, { component: 'Chat', actionType, lessonId, quizId, hasGeneratedQuiz: !!generatedQuizData }); // Log if quiz data is present
 
 		// Handle local context changes based on action
 		if (actionType === 'showLessonOverview' && lessonId) {
@@ -377,10 +378,13 @@ export default function Chat({
 		} else if (actionType === 'completeLesson') {
 			logger.info(`Executing 'completeLesson' action`, { component: 'Chat', currentLessonId: llmContext.currentLesson?.id });
 			setLlmContext((prev: LlmContext) => ({ ...prev, currentLesson: null, currentQuiz: null }));
-		} else {
+	} else if (actionType === 'generateQuiz') {
+			  logger.info(`Executing 'generateQuiz' action`, { component: 'Chat', quizCount: generatedQuizData?.length ?? 0 });
+			  // No local context change needed here, just pass data to parent
+	} else {
 			// Log other actions but don't necessarily change local context unless needed
 			logger.info(`Executing other action type`, { component: 'Chat', actionType, lessonId, quizId });
-			// TODO: Implement handlers for other actions like returnToLessonOverview, showPreviousQuiz, showNextQuiz if needed
+			// TODO: Implement handlers for other actions like returnToLessonOverview, showPreviousQuiz, showNextQuiz if needed for local state
 		}
 
 		// Warn if required IDs are missing for specific actions
@@ -396,6 +400,7 @@ export default function Chat({
 			lessonId: lessonId,
 			quizId: quizId,
 			lessonMarkdownContent: lessonMarkdownContent,
+			generatedQuizData: generatedQuizData, // Pass generated quiz data
 		};
 		logger.info(`Calling onAction prop for UI update`, { component: 'Chat', action: actionPayload });
 		onAction(actionPayload);

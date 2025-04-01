@@ -6,9 +6,10 @@ import Header from "@/components/header"
 import Sidebar from "@/components/sidebar"
 import LessonContent from "@/components/lesson-content"
 import Chat from "@/components/chat"
+import QuizDisplay from "@/components/quiz-display"; // Import the new component
 import { Menu } from "lucide-react"
 import { getSubjects, getLessons } from "@/lib/data-service"
-import type { Subject, Lesson, ChatAction } from "@/types"
+import type { Subject, Lesson, ChatAction, LessonQuiz } from "@/types" // Added LessonQuiz
 
 /**
  * The main page component for the Digital Learning Platform.
@@ -27,6 +28,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [simulatedMessageToSend, setSimulatedMessageToSend] = useState<{ text: string; id: number } | null>(null);
   const [generatedLessonContent, setGeneratedLessonContent] = useState<string | null>(null);
+  const [generatedQuizData, setGeneratedQuizData] = useState<LessonQuiz[] | null>(null); // State for generated quiz
 
   const isMobile = useMobile()
 
@@ -122,6 +124,7 @@ export default function Home() {
                 setCurrentLessonId(action.lessonId);
                 setGeneratedLessonContent(null);
                 setCurrentQuizIdToShow(null);
+                setGeneratedQuizData(null); // Clear generated quiz
             } else {
                  console.warn("showLessonOverview action received without valid lessonId", { action });
             }
@@ -135,6 +138,7 @@ export default function Home() {
                     }
                     setGeneratedLessonContent(null);
                     setCurrentQuizIdToShow(action.quizId);
+                    setGeneratedQuizData(null); // Clear generated quiz
                 } else {
                     console.warn(`Attempted to show non-existent quiz: ${action.lessonId}/${action.quizId}`, { action });
                 }
@@ -156,6 +160,7 @@ export default function Home() {
                  }
                  setGeneratedLessonContent(null);
                  setCurrentQuizIdToShow(null);
+                 setGeneratedQuizData(null); // Clear generated quiz
             } else {
                  console.warn("returnToLessonOverview action received without valid lessonId", { action });
             }
@@ -167,9 +172,24 @@ export default function Home() {
                 setGeneratedLessonContent(action.lessonMarkdownContent);
                 setCurrentLessonId(null);
                 setCurrentQuizIdToShow(null);
-                console.log("[generateFullLesson] Stored generated content and cleared currentLessonId.");
+                setGeneratedQuizData(null); // Clear generated quiz
+                console.log("[generateFullLesson] Stored generated content and cleared currentLessonId/Quiz.");
             } else {
                  console.warn("[generateFullLesson] Failed: lessonMarkdownContent is missing.", { action });
+            }
+            break;
+        case "generateQuiz":
+            console.log("[generateQuiz] Received action:", JSON.stringify(action, null, 2));
+            if (action.generatedQuizData && action.generatedQuizData.length > 0) {
+                console.log("[generateQuiz] generatedQuizData received:", action.generatedQuizData);
+                setGeneratedQuizData(action.generatedQuizData);
+                // Clear other content displays
+                setCurrentLessonId(null);
+                setCurrentQuizIdToShow(null);
+                setGeneratedLessonContent(null);
+                console.log("[generateQuiz] Stored generated quiz data and cleared other content states.");
+            } else {
+                 console.warn("[generateQuiz] Failed: generatedQuizData is missing or empty.", { action });
             }
             break;
         default:
@@ -232,7 +252,12 @@ export default function Home() {
    * @returns {JSX.Element} The main content element.
    */
   const renderMainContent = () => {
-    // Priority 1: Display dynamically generated content if available
+    // Priority 1: Display LLM-generated quiz if available
+    if (generatedQuizData && generatedQuizData.length > 0) {
+        console.log("Rendering QuizDisplay with data:", generatedQuizData);
+        return <QuizDisplay key="generated-quiz" quizzes={generatedQuizData} />;
+    }
+    // Priority 2: Display dynamically generated lesson content if available
     if (generatedLessonContent) {
         const extractedTitle = extractTitleFromMarkdown(generatedLessonContent);
 
@@ -257,7 +282,7 @@ export default function Home() {
             />
         );
     }
-    // Priority 2: Display the currently selected lesson if no generated content
+    // Priority 3: Display the currently selected lesson if no generated content/quiz
     else if (currentLesson) {
         return (
             <LessonContent
@@ -270,7 +295,7 @@ export default function Home() {
             />
         );
     }
-    // Priority 3: Show welcome message if nothing else is selected/generated
+    // Priority 4: Show welcome message if nothing else is selected/generated
     else {
         return (
             <div className="text-center p-10">
