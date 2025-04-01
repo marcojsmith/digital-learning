@@ -86,7 +86,7 @@ export default function Chat({
 	activeLessonId,
 }: ChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { text: "Hello! I'm your math tutor. I can help you learn about numbers, operations, and more. What would you like to learn today?", type: "ai" }, // Corrected initial message to match ChatMessage type
+    { text: "Hello! I'm your AI tutor. I can help you learn about numbers, operations, and more. What would you like to learn today?", type: "ai" }, // Corrected initial message to match ChatMessage type
   ])
   const [inputValue, setInputValue] = useState("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
